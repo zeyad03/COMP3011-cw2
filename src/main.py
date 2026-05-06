@@ -62,7 +62,7 @@ class CLI:
         self._stdin = stdin if stdin is not None else sys.stdin
         self._stdout = stdout if stdout is not None else sys.stdout
         self._crawler_factory = crawler_factory or (
-            lambda: Crawler(delay=crawler_delay)
+            lambda: Crawler(delay=crawler_delay, verbose=True)
         )
         self._index: Index | None = None
         self._handlers: dict[str, CommandHandler] = {

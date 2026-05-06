@@ -74,6 +74,7 @@ class Crawler:
         backoff_base: float = DEFAULT_BACKOFF_BASE,
         respect_robots: bool = True,
         session: requests.Session | None = None,
+        verbose: bool = False,
     ) -> None:
         if delay < 0:
             raise ValueError("delay must be non-negative")
@@ -88,6 +89,7 @@ class Crawler:
         self._respect_robots = respect_robots
         self._session = session if session is not None else requests.Session()
         self._session.headers.update({"User-Agent": user_agent})
+        self._verbose = verbose
         self._last_request_at: float | None = None
 
     def crawl(self, start_url: str) -> list[Page]:
@@ -122,6 +124,8 @@ class Crawler:
 
             title, text = self._extract_text(html)
             pages.append(Page(url=url, title=title, text=text))
+            if self._verbose:
+                print(f"  [{len(pages):>3}] {url}", flush=True)
 
             for link in self._extract_links(html, base_url=url):
                 if urlparse(link).netloc != host:
