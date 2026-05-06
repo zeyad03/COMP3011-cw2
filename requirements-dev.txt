@@ -9,3 +9,6 @@ types-requests>=2.32
 # Used only by evaluation/compare_sklearn.py for empirical
 # comparison; not required to run the search engine itself.
 scikit-learn>=1.5
+
+# Property-based testing in tests/test_properties.py.
+hypothesis>=6.100
