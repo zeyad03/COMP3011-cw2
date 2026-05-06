@@ -22,6 +22,7 @@ from src.crawler import DEFAULT_DELAY, Crawler
 from src.indexer import Index, build_index
 from src.ranker import RANKERS, Ranker, TFIDFRanker
 from src.search import find, print_term, suggest
+from src.snippet import generate_snippet
 from src.storage import StorageError, load, save
 from src.tokenizer import tokenize
 
@@ -174,7 +175,7 @@ class CLI:
         if self._index is None:
             self._print("no index loaded. Run 'build' or 'load' first.")
             return True
-        ranker, explain, remaining = _extract_find_flags(args)
+        ranker, explain, snippet, remaining = _extract_find_flags(args)
         if ranker is None:
             self._print(
                 f"unknown ranker. Available: {', '.join(sorted(RANKERS))}"
@@ -182,15 +183,22 @@ class CLI:
             return True
         if not remaining:
             self._print(
-                "usage: find [--ranker <name>] [--explain] <words...>"
+                "usage: find [--ranker <name>] [--explain] [--snippet] <words...>"
             )
             return True
         query = " ".join(remaining)
+        query_tokens = tokenize(query)
         results = find(self._index, query, ranker=ranker, explain=explain)
         if not results:
             self._print(f"no results for {query!r}.")
             self._maybe_suggest(query)
             return True
+        # doc_id lookup for snippet generation.
+        url_to_doc_id = (
+            {d["url"]: doc_id for doc_id, d in self._index["docs"].items()}
+            if snippet
+            else {}
+        )
         for rank, result in enumerate(results, 1):
             self._print(f"{rank}. {result.url}  (score={result.score})")
             if explain:
@@ -199,6 +207,13 @@ class CLI:
                         f"     {c.term:<14} tf={c.tf:<3} df={c.df:<4} "
                         f"contribution={c.contribution}"
                     )
+            if snippet:
+                doc_id = url_to_doc_id.get(result.url, "")
+                excerpt = generate_snippet(
+                    self._index, doc_id, query_tokens
+                )
+                if excerpt:
+                    self._print(f"     {excerpt}")
         return True
 
     def _cmd_help(self, _args: list[str]) -> bool:
@@ -207,9 +222,9 @@ class CLI:
         self._print("  load               load the saved index from disk")
         self._print("  print <word>       print the inverted index for a word")
         self._print(
-            "  find [--ranker R] [--explain] <words...>"
-            "  R in {tfidf,bm25,frequency}"
+            "  find [--ranker R] [--explain] [--snippet] <words...>"
         )
+        self._print("                     R in {tfidf,bm25,frequency}")
         self._print("  help               show this message")
         self._print("  exit | quit        leave the shell")
         return True
@@ -239,35 +254,40 @@ class CLI:
 
 def _extract_find_flags(
     args: list[str],
-) -> tuple[Ranker | None, bool, list[str]]:
-    """Extract ``--ranker <name>`` and ``--explain`` flags from *args*.
+) -> tuple[Ranker | None, bool, bool, list[str]]:
+    """Extract ``--ranker <name>``, ``--explain``, and ``--snippet`` from *args*.
 
-    Returns ``(ranker, explain, remaining_args)``:
+    Returns ``(ranker, explain, snippet, remaining_args)``:
 
     * *ranker*: the matching :data:`~src.ranker.RANKERS` entry, or
       :class:`TFIDFRanker` when no flag was given. ``None`` indicates
       an unknown ranker name and the caller should report an error.
     * *explain*: ``True`` if ``--explain`` was present.
+    * *snippet*: ``True`` if ``--snippet`` was present.
     * *remaining_args*: the positional words of the query.
     """
     ranker: Ranker = TFIDFRanker()
     explain = False
+    snippet = False
     remaining: list[str] = []
     i = 0
     while i < len(args):
         if args[i] == "--ranker" and i + 1 < len(args):
             name = args[i + 1]
             if name not in RANKERS:
-                return None, False, []
+                return None, False, False, []
             ranker = RANKERS[name]
             i += 2
         elif args[i] == "--explain":
             explain = True
             i += 1
+        elif args[i] == "--snippet":
+            snippet = True
+            i += 1
         else:
             remaining.append(args[i])
             i += 1
-    return ranker, explain, remaining
+    return ranker, explain, snippet, remaining
 
 
 def main() -> int:

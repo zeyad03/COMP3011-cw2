@@ -191,6 +191,23 @@ class TestFindCommand:
         )
         assert "contribution=" not in out
 
+    def test_find_snippet_marks_query_terms(self, tmp_path: Path) -> None:
+        out = _run(
+            ["load", "find --snippet hello"],
+            index_path=_saved_index(tmp_path),
+        )
+        # Query terms should be wrapped in ** markers in the snippet.
+        assert "**hello**" in out
+
+    def test_find_without_snippet_omits_excerpt_markers(
+        self, tmp_path: Path
+    ) -> None:
+        out = _run(
+            ["load", "find hello"],
+            index_path=_saved_index(tmp_path),
+        )
+        assert "**hello**" not in out
+
 
 # -------------------------------------------------------------------- build
 
