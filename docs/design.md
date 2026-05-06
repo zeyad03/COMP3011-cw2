@@ -191,6 +191,37 @@ Let:
 For the target corpus (~70 docs, ~3 k unique terms), every operation
 completes in milliseconds.
 
+### 8.1 Measured numbers
+
+Run `python scripts/benchmark.py` to reproduce. Sample run on a 2024
+M-series MacBook (Python 3.14):
+
+```
+build_index
+  docs   mean (ms)
+    10        0.51
+   100        6.51
+  1000       57.37
+  2000      124.14
+```
+
+`build_index` scales linearly with the corpus size, as predicted. The
+intercept reflects fixed overhead (timestamp, dict initialisation).
+
+```
+find  (200-doc corpus)
+  single             and    0.12 ms
+  AND (2 terms)      and    0.07 ms
+  AND (3 terms)      and    0.05 ms
+  phrase (2 terms)   phrase 0.19 ms
+  phrase (3 terms)   phrase 0.23 ms
+```
+
+Search times are sub-millisecond. Multi-term AND is *faster* than
+single-term because the intersection-from-smallest-posting strategy
+prunes the candidate set aggressively. Phrase mode is slightly slower
+because it adds a per-candidate positional adjacency check.
+
 ## 9. Design trade-offs explicitly considered
 
 - **BM25 vs. TF-IDF**. BM25 has better empirical relevance, but the
