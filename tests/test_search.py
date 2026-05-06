@@ -9,6 +9,7 @@ from src.indexer import Index, build_index
 from src.ranker import TFIDFRanker
 from src.search import (
     SearchResult,
+    TermContribution,
     _is_adjacent_in_doc,
     _levenshtein,
     find,
@@ -209,6 +210,40 @@ class TestTermScore:
 
 
 # ------------------------------------------------------------------- suggest
+
+
+class TestExplain:
+    def test_explain_omits_breakdown_by_default(self) -> None:
+        idx = _index("hello world")
+        results = find(idx, "hello")
+        assert results[0].breakdown == ()
+
+    def test_explain_attaches_breakdown_per_term(self) -> None:
+        idx = _index("good day for friends", "good news for everyone")
+        results = find(idx, "good friends", explain=True)
+        # Only doc 0 has both terms.
+        assert len(results) == 1
+        terms = {c.term for c in results[0].breakdown}
+        assert terms == {"good", "friends"}
+
+    def test_breakdown_contributions_sum_to_score(self) -> None:
+        idx = _index(
+            "alpha beta gamma",
+            "alpha alpha beta",
+            "beta gamma delta",
+        )
+        results = find(idx, "alpha beta", explain=True)
+        for r in results:
+            total = sum(c.contribution for c in r.breakdown)
+            assert r.score == pytest.approx(total, abs=1e-5)
+
+    def test_breakdown_records_tf_and_df(self) -> None:
+        idx = _index("foo foo bar")
+        results = find(idx, "foo", explain=True)
+        c = results[0].breakdown[0]
+        assert c.term == "foo"
+        assert c.tf == 2
+        assert c.df == 1
 
 
 class TestSuggest:

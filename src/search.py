@@ -32,13 +32,28 @@ SearchMode = Literal["and", "phrase"]
 
 
 @dataclass(frozen=True)
+class TermContribution:
+    """Per-term breakdown of a document's score, for ``--explain`` output."""
+
+    term: str
+    tf: int
+    df: int
+    contribution: float
+
+
+@dataclass(frozen=True)
 class SearchResult:
-    """A single ranked search hit."""
+    """A single ranked search hit.
+
+    ``breakdown`` is empty unless :func:`find` was called with
+    ``explain=True``; see the ``--explain`` CLI flag.
+    """
 
     url: str
     title: str
     score: float
     matched_terms: tuple[str, ...]
+    breakdown: tuple[TermContribution, ...] = ()
 
 
 # ----------------------------------------------------------------- print_term
@@ -74,6 +89,7 @@ def find(
     mode: SearchMode = "and",
     ranker: Ranker | None = None,
     top_k: int | None = None,
+    explain: bool = False,
 ) -> list[SearchResult]:
     """Find pages matching *query* using the given ranker.
 
@@ -88,6 +104,9 @@ def find(
             Pass :class:`FrequencyRanker` or :class:`BM25Ranker` to
             compare alternative scoring schemes against the same index.
         top_k: Optional cap on the number of results returned.
+        explain: If true, attach a per-term ``breakdown`` to each
+            :class:`SearchResult` so callers can see how each query
+            term contributed to the document's score.
 
     Returns:
         Ranked list of :class:`SearchResult`, highest score first.
@@ -130,22 +149,34 @@ def find(
     for doc_id in candidate_ids:
         doc = index["docs"][doc_id]
         score = 0.0
+        contributions: list[TermContribution] = []
         for token, postings in zip(tokens, postings_per_term):
             df = index["terms"][token]["df"]
             tf = postings[doc_id]["tf"]
-            score += ranker.score(
+            term_score = ranker.score(
                 tf=tf,
                 df=df,
                 num_docs=num_docs,
                 doc_length=doc["length"],
                 avg_doc_length=avg_doc_length,
             )
+            score += term_score
+            if explain:
+                contributions.append(
+                    TermContribution(
+                        term=token,
+                        tf=tf,
+                        df=df,
+                        contribution=round(term_score, 6),
+                    )
+                )
         results.append(
             SearchResult(
                 url=doc["url"],
                 title=doc["title"],
                 score=round(score, 6),
                 matched_terms=tuple(tokens),
+                breakdown=tuple(contributions),
             )
         )
 

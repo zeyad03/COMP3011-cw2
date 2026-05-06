@@ -169,6 +169,28 @@ class TestFindCommand:
         )
         assert "usage: find" in out
 
+    def test_find_explain_prints_per_term_breakdown(
+        self, tmp_path: Path
+    ) -> None:
+        out = _run(
+            ["load", "find --explain hello"],
+            index_path=_saved_index(tmp_path),
+        )
+        # Each result should be followed by a breakdown line containing
+        # tf=, df=, and contribution=.
+        assert "tf=" in out
+        assert "df=" in out
+        assert "contribution=" in out
+
+    def test_find_without_explain_omits_breakdown(
+        self, tmp_path: Path
+    ) -> None:
+        out = _run(
+            ["load", "find hello"],
+            index_path=_saved_index(tmp_path),
+        )
+        assert "contribution=" not in out
+
 
 # -------------------------------------------------------------------- build
 
