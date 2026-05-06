@@ -128,13 +128,59 @@ scraping work.
 
 ---
 
+## Engagement with the literature
+
+Vaithilingam, Zhang & Glassman (2022), *Expectation vs. Experience:
+Evaluating the Usability of Code Generation Tools Powered by Large
+Language Models* (CHI EA), report a striking finding from their user
+study of GitHub Copilot: developers **prefer** AI assistance and
+*perceive* it as faster, but objective task-completion times do not
+significantly improve. The bottleneck shifts: instead of writing
+boilerplate, developers spend time **understanding, verifying, and
+integrating** AI output. The authors call this the *verification gap*.
+
+**My experience aligns with this finding.** The clearest example in
+this project is the TF-IDF entry above (2026-05-06 — *TF-IDF formula
+for small corpora*). When I asked for "a standard TF-IDF score" the
+AI returned `tf · log(N/df)` — textbook-correct, indistinguishable
+from any IR lecture. Without the gold-standard evaluation in
+`evaluation/evaluate.py` I would have shipped it. The bug only
+surfaces empirically when `df == N` (a term appearing in every
+document collapses the score to zero, breaking ranking on small
+corpora). Generation took seconds; *verifying* the formula was
+appropriate for a 70-page corpus took roughly an hour of debugging
+plus the work of building the evaluation harness in the first place.
+Vaithilingam et al.'s framing fits: the AI didn't save me time on
+the IR work — it shifted my time from *deriving* the formula to
+*defending* the AI's choice. The total may even be higher, because
+defending a borrowed formula is psychologically harder than owning
+one I derived myself.
+
+**Implications for *learning*.** Vaithilingam et al. don't address
+education directly, but the verification-gap framing does. For a
+coursework assessed at 30% of a module mark, the question is not
+"did the AI produce passing code?" but "did the AI hide the
+*reasoning* I was supposed to learn?". My answer, honestly: *partly*.
+I understand TF-IDF's small-corpus pathology *because* I had to debug
+the AI's textbook answer — that probably taught me more than reading
+a chapter. But for the parts of the project the AI handled
+fluently — atomic file writes, BeautifulSoup attribute coercion, the
+politeness-window pattern — I have a working tool but a shallower
+understanding than I would after building each from scratch. The
+GenAI declaration in the video segment will be honest about this
+asymmetry.
+
+---
+
 ## To add before submission
 
-- [ ] Reflection on overall time savings vs. time spent verifying.
-- [ ] One example where the AI's answer was *wrong* in a way that took
-      time to debug.
+- [x] Reflection on overall time savings vs. time spent verifying.
+      *(Covered in the Vaithilingam discussion above.)*
+- [x] One example where the AI's answer was *wrong* in a way that took
+      time to debug. *(TF-IDF small-corpus collapse.)*
 - [ ] One example where the AI surfaced a technique you had not heard of
       (or, conversely, where it missed an obvious modern technique).
-- [ ] A sentence on how using the AI affected your *learning* — did you
+- [x] A sentence on how using the AI affected your *learning* — did you
       end the project understanding the topic better, the same, or worse
       than if you had implemented from scratch?
+      *(Implications-for-learning paragraph above.)*
