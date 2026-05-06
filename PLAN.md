@@ -7,6 +7,26 @@
 **Working window**: ~2 days
 **Target grade band**: 80–100 (Excellent to Outstanding)
 
+## Progress (live)
+
+| Phase | Status | Notes |
+| --- | --- | --- |
+| 0 — Scaffold | ✅ | Python pkg, deps, pytest, CI, README skeleton |
+| 1 — Tokeniser | ✅ | 22 tests, 100% coverage |
+| 2 — Crawler | ✅ | Polite BFS, retries, robots.txt; 25 tests, 100% coverage |
+| 3 — Indexer | ✅ | Positional inverted index, TypedDicts; 17 tests, 100% coverage |
+| 4 — Storage | ✅ | Atomic JSON, schema versioning; 13 tests, 100% coverage |
+| 5 — Search | ✅ | TF-IDF, phrase mode, suggestions; 42 tests, 100% coverage |
+| 6 — CLI | ✅ | REPL with build/load/print/find; 24 tests, 96% coverage |
+| 7 — Real crawl | 🟡 | Running (~6 s × ~80 pages ≈ 8–10 min) |
+| 8 — Advanced | ✅ | Phrase queries + suggestions in §5; benchmark suite added |
+| 9 — Polish | ✅ | mypy --strict clean, types-requests, integration fixtures |
+| 10 — Docs | ✅ | README, design.md (§§1–9), GenAI journal scaffold |
+| 12 — Submit | ⏳ | After tagging v1.0.0 and pushing to GitHub |
+
+**Current totals**: 152 tests, 99% line coverage, mypy strict clean,
+~7 phases worth of commits.
+
 ---
 
 ## 1. Goal
