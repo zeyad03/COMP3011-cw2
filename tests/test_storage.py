@@ -10,7 +10,14 @@ import pytest
 
 from src.crawler import Page
 from src.indexer import Index, build_index
-from src.storage import IndexVersionError, StorageError, load, save
+from src.storage import (
+    IndexVersionError,
+    StorageError,
+    _delta_decode,
+    _delta_encode,
+    load,
+    save,
+)
 
 
 def _index() -> Index:
@@ -135,3 +142,96 @@ class TestSerialisationFormat:
         loaded = load(target)
         assert "café" in loaded["docs"]["0"]["title"]
         assert "é" in loaded["terms"]
+
+
+class TestDeltaCompression:
+    @pytest.mark.parametrize(
+        "absolute,deltas",
+        [
+            ([], []),
+            ([5], [5]),
+            ([3, 7, 12], [3, 4, 5]),
+            ([0, 0, 0], [0, 0, 0]),  # consecutive zero deltas survive
+            ([313, 322, 331, 341, 350], [313, 9, 9, 10, 9]),
+        ],
+    )
+    def test_encode_then_decode_round_trips(
+        self, absolute: list[int], deltas: list[int]
+    ) -> None:
+        assert _delta_encode(absolute) == deltas
+        assert _delta_decode(deltas) == absolute
+
+    def test_save_writes_v11_format(self, tmp_path: Path) -> None:
+        target = tmp_path / "idx.json"
+        save(_index(), target)
+        on_disk = json.loads(target.read_text())
+        assert on_disk["meta"]["version"] == "1.1"
+
+    def test_save_does_not_mutate_caller_index(self, tmp_path: Path) -> None:
+        idx = _index()
+        before = json.dumps(idx, sort_keys=True)
+        save(idx, tmp_path / "idx.json")
+        after = json.dumps(idx, sort_keys=True)
+        assert before == after  # caller's dict is untouched
+
+    def test_load_decodes_deltas_back_to_absolute_positions(
+        self, tmp_path: Path
+    ) -> None:
+        original = _index()
+        target = tmp_path / "idx.json"
+        save(original, target)
+        loaded = load(target)
+        # Pick a term with multiple positions and verify they are absolute.
+        for entry in loaded["terms"].values():
+            for posting in entry["postings"].values():
+                positions = posting["positions"]
+                if len(positions) > 1:
+                    # Strictly increasing positions => absolute, not deltas.
+                    assert all(b > a for a, b in zip(positions, positions[1:]))
+                    return  # one example is enough
+
+    def test_loading_v10_file_still_works(self, tmp_path: Path) -> None:
+        # Older v1.0 files stored absolute positions. Loader must accept them.
+        v10_index = {
+            "meta": {
+                "crawled_at": "2026-05-06T00:00:00+00:00",
+                "num_docs": 1,
+                "num_terms": 2,
+                "total_tokens": 4,
+                "version": "1.0",
+            },
+            "docs": {
+                "0": {"url": "https://x.com/a", "title": "", "length": 4}
+            },
+            "terms": {
+                "alpha": {
+                    "df": 1,
+                    "cf": 2,
+                    "postings": {
+                        "0": {"tf": 2, "positions": [0, 3]},  # absolute
+                    },
+                },
+                "beta": {
+                    "df": 1,
+                    "cf": 2,
+                    "postings": {
+                        "0": {"tf": 2, "positions": [1, 2]},
+                    },
+                },
+            },
+        }
+        target = tmp_path / "v10.json"
+        target.write_text(json.dumps(v10_index))
+
+        loaded = load(target)
+        # Positions must be absolute (no delta transform).
+        assert loaded["terms"]["alpha"]["postings"]["0"]["positions"] == [0, 3]
+        assert loaded["terms"]["beta"]["postings"]["0"]["positions"] == [1, 2]
+
+    def test_unsupported_version_rejected(self, tmp_path: Path) -> None:
+        target = tmp_path / "v999.json"
+        target.write_text(
+            json.dumps({"meta": {"version": "999.0"}, "docs": {}, "terms": {}})
+        )
+        with pytest.raises(IndexVersionError):
+            load(target)

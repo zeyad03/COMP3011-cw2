@@ -191,7 +191,29 @@ Let:
 For the target corpus (~70 docs, ~3 k unique terms), every operation
 completes in milliseconds.
 
-### 8.1 Measured numbers
+### 8.1 Storage format and posting compression
+
+Positions in the on-disk JSON are **delta-encoded**: a posting list of
+absolute positions ``[313, 322, 331, 341, 350]`` is stored as
+``[313, 9, 9, 10, 9]``. Encoding and decoding live in ``storage.py`` so
+the in-memory API (search, indexer) continues to operate on absolute
+positions. Files written with the v1.1 format are detected at load
+time; v1.0 files (absolute positions) remain readable.
+
+Measured reduction on the live ``data/index.json``: 2{,}842{,}768 →
+2{,}831{,}007 bytes (\(\sim\)0.4\,\%). The improvement is modest
+because, on this corpus, most posting lists have only a single
+position (the term occurs once in the document) and offer no
+opportunity to delta-encode. Pages with high-frequency terms — e.g.\
+``indifference`` appears five times on
+``/tag/inspirational/page/1/`` — see meaningful per-posting savings,
+but they are too few to dominate the total. Aggressive further gains
+would need a different attack: variable-byte integer encoding,
+dictionary compression of term names, or moving away from indented
+JSON. Those are out of scope for this submission; the delta encoding
+is included as a clean and easily-verifiable first step.
+
+### 8.2 Measured numbers
 
 Run `python scripts/benchmark.py` to reproduce. Sample run on a 2024
 M-series MacBook (Python 3.14):

@@ -51,7 +51,7 @@ from typing import Iterable, TypedDict
 from src.crawler import Page
 from src.tokenizer import tokenize
 
-INDEX_VERSION: str = "1.0"
+INDEX_VERSION: str = "1.1"
 
 
 class DocMeta(TypedDict):
