@@ -3,37 +3,28 @@
 Three public functions:
 
 - :func:`print_term` — formats a single term's posting list for display.
-- :func:`find` — multi-term search with TF-IDF ranking and an optional
-  phrase mode that requires terms to appear in adjacent positions.
+- :func:`find` — multi-term search with pluggable scoring and an
+  optional phrase mode that requires terms to appear in adjacent
+  positions.
 - :func:`suggest` — Levenshtein-based "did you mean?" for unknown query
   terms.
 
-Ranking
--------
-
-Per-term contribution to the document score uses a sub-linear TF and a
-smoothed IDF:
-
-    score(t, d)  = (1 + log10(tf(t, d))) * log10(1 + N / df(t))
-
-* The ``1 + log10(tf)`` form dampens the influence of very-frequent
-  terms within a single document (so a doc that says "foo" 100 times
-  doesn't rank 100× higher than one that mentions it once).
-* The ``1 + N/df`` form keeps IDF strictly positive even when a term
-  appears in *every* document (i.e. ``df == N``), avoiding the
-  degenerate all-zeros case that hits small corpora hard.
-
-The total document score is the sum of per-term contributions.
+Ranking is delegated to a :class:`~src.ranker.Ranker`. Three are
+provided in :mod:`src.ranker`: the naive ``FrequencyRanker``
+(baseline), the default ``TFIDFRanker`` (sub-linear TF, smoothed IDF),
+and ``BM25Ranker`` (Okapi BM25 with tunable ``k1`` and ``b``). The
+ranker is injectable so callers — including the evaluation harness —
+can compare scoring functions on the same index.
 """
 
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass
 from io import StringIO
 from typing import Literal
 
 from src.indexer import Index, Posting
+from src.ranker import Ranker, TFIDFRanker
 from src.tokenizer import tokenize
 
 
@@ -81,9 +72,10 @@ def find(
     query: str,
     *,
     mode: SearchMode = "and",
+    ranker: Ranker | None = None,
     top_k: int | None = None,
 ) -> list[SearchResult]:
-    """Find pages matching *query* using TF-IDF ranking.
+    """Find pages matching *query* using the given ranker.
 
     Args:
         index: The inverted index to search.
@@ -92,11 +84,17 @@ def find(
         mode: ``"and"`` requires every query token to appear in the
             matching document (any order). ``"phrase"`` additionally
             requires the tokens to appear in adjacent positions.
+        ranker: Scoring function. Defaults to :class:`TFIDFRanker`.
+            Pass :class:`FrequencyRanker` or :class:`BM25Ranker` to
+            compare alternative scoring schemes against the same index.
         top_k: Optional cap on the number of results returned.
 
     Returns:
         Ranked list of :class:`SearchResult`, highest score first.
     """
+    if ranker is None:
+        ranker = TFIDFRanker()
+
     tokens = tokenize(query)
     if not tokens:
         return []
@@ -127,6 +125,7 @@ def find(
             return []
 
     num_docs = index["meta"]["num_docs"]
+    avg_doc_length = _avg_doc_length(index)
     results: list[SearchResult] = []
     for doc_id in candidate_ids:
         doc = index["docs"][doc_id]
@@ -134,7 +133,13 @@ def find(
         for token, postings in zip(tokens, postings_per_term):
             df = index["terms"][token]["df"]
             tf = postings[doc_id]["tf"]
-            score += _term_score(tf=tf, df=df, num_docs=num_docs)
+            score += ranker.score(
+                tf=tf,
+                df=df,
+                num_docs=num_docs,
+                doc_length=doc["length"],
+                avg_doc_length=avg_doc_length,
+            )
         results.append(
             SearchResult(
                 url=doc["url"],
@@ -151,12 +156,11 @@ def find(
     return results
 
 
-def _term_score(*, tf: int, df: int, num_docs: int) -> float:
-    if tf <= 0 or df <= 0 or num_docs <= 0:
+def _avg_doc_length(index: Index) -> float:
+    docs = index["docs"]
+    if not docs:
         return 0.0
-    tf_weight = 1.0 + math.log10(tf)
-    idf_weight = math.log10(1.0 + num_docs / df)
-    return tf_weight * idf_weight
+    return sum(d["length"] for d in docs.values()) / len(docs)
 
 
 def _is_adjacent_in_doc(

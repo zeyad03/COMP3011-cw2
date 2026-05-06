@@ -20,6 +20,7 @@ from typing import Callable, TextIO
 
 from src.crawler import DEFAULT_DELAY, Crawler
 from src.indexer import Index, build_index
+from src.ranker import RANKERS, Ranker, TFIDFRanker
 from src.search import find, print_term, suggest
 from src.storage import StorageError, load, save
 from src.tokenizer import tokenize
@@ -173,11 +174,17 @@ class CLI:
         if self._index is None:
             self._print("no index loaded. Run 'build' or 'load' first.")
             return True
-        if not args:
-            self._print("usage: find <words...>")
+        ranker, remaining = _extract_ranker_flag(args)
+        if ranker is None:
+            self._print(
+                f"unknown ranker. Available: {', '.join(sorted(RANKERS))}"
+            )
             return True
-        query = " ".join(args)
-        results = find(self._index, query)
+        if not remaining:
+            self._print("usage: find [--ranker <name>] <words...>")
+            return True
+        query = " ".join(remaining)
+        results = find(self._index, query, ranker=ranker)
         if not results:
             self._print(f"no results for {query!r}.")
             self._maybe_suggest(query)
@@ -191,7 +198,10 @@ class CLI:
         self._print("  build              crawl the website and build the index")
         self._print("  load               load the saved index from disk")
         self._print("  print <word>       print the inverted index for a word")
-        self._print("  find <words...>    find pages containing all the words")
+        self._print(
+            "  find [--ranker R] <words...>"
+            "    find pages; R in {tfidf,bm25,frequency}"
+        )
         self._print("  help               show this message")
         self._print("  exit | quit        leave the shell")
         return True
@@ -217,6 +227,30 @@ class CLI:
     def _print(self, *parts: object) -> None:
         self._stdout.write(" ".join(str(p) for p in parts) + "\n")
         self._stdout.flush()
+
+
+def _extract_ranker_flag(args: list[str]) -> tuple[Ranker | None, list[str]]:
+    """Extract ``--ranker <name>`` from *args* if present.
+
+    Returns a tuple of ``(ranker, remaining_args)``. The ranker is the
+    matching :data:`~src.ranker.RANKERS` entry, or :class:`TFIDFRanker`
+    if no flag was given. ``None`` is returned if the flag is present
+    but the name is unknown — the caller should report an error.
+    """
+    ranker: Ranker = TFIDFRanker()
+    remaining: list[str] = []
+    i = 0
+    while i < len(args):
+        if args[i] == "--ranker" and i + 1 < len(args):
+            name = args[i + 1]
+            if name not in RANKERS:
+                return None, []
+            ranker = RANKERS[name]
+            i += 2
+        else:
+            remaining.append(args[i])
+            i += 1
+    return ranker, remaining
 
 
 def main() -> int:

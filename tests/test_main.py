@@ -147,6 +147,28 @@ class TestFindCommand:
         out = _run(["load", "find"], index_path=_saved_index(tmp_path))
         assert "usage: find" in out
 
+    def test_find_with_bm25_ranker(self, tmp_path: Path) -> None:
+        out = _run(
+            ["load", "find --ranker bm25 hello"],
+            index_path=_saved_index(tmp_path),
+        )
+        assert "https://x.com/" in out
+        assert "score=" in out
+
+    def test_find_with_unknown_ranker(self, tmp_path: Path) -> None:
+        out = _run(
+            ["load", "find --ranker bogus hello"],
+            index_path=_saved_index(tmp_path),
+        )
+        assert "unknown ranker" in out
+
+    def test_find_only_ranker_flag_no_query(self, tmp_path: Path) -> None:
+        out = _run(
+            ["load", "find --ranker bm25"],
+            index_path=_saved_index(tmp_path),
+        )
+        assert "usage: find" in out
+
 
 # -------------------------------------------------------------------- build
 

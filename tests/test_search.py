@@ -6,15 +6,18 @@ import pytest
 
 from src.crawler import Page
 from src.indexer import Index, build_index
+from src.ranker import TFIDFRanker
 from src.search import (
     SearchResult,
     _is_adjacent_in_doc,
     _levenshtein,
-    _term_score,
     find,
     print_term,
     suggest,
 )
+
+
+_score = TFIDFRanker().score
 
 
 def _index(*texts: str) -> Index:
@@ -183,17 +186,25 @@ class TestAdjacencyHelper:
 
 
 class TestTermScore:
+    """Sanity tests for the default TF-IDF scorer.
+
+    These assertions also verify that the previously inlined
+    ``_term_score`` behaviour is preserved by ``TFIDFRanker``.
+    """
+
+    _kwargs = {"doc_length": 100, "avg_doc_length": 100.0}
+
     def test_zero_inputs_yield_zero(self) -> None:
-        assert _term_score(tf=0, df=1, num_docs=10) == 0.0
-        assert _term_score(tf=1, df=0, num_docs=10) == 0.0
-        assert _term_score(tf=1, df=1, num_docs=0) == 0.0
+        assert _score(tf=0, df=1, num_docs=10, **self._kwargs) == 0.0
+        assert _score(tf=1, df=0, num_docs=10, **self._kwargs) == 0.0
+        assert _score(tf=1, df=1, num_docs=0, **self._kwargs) == 0.0
 
     def test_score_is_positive_for_normal_inputs(self) -> None:
-        assert _term_score(tf=1, df=1, num_docs=10) > 0
+        assert _score(tf=1, df=1, num_docs=10, **self._kwargs) > 0
 
     def test_rare_term_outscores_common_term(self) -> None:
-        rare = _term_score(tf=1, df=1, num_docs=100)
-        common = _term_score(tf=1, df=50, num_docs=100)
+        rare = _score(tf=1, df=1, num_docs=100, **self._kwargs)
+        common = _score(tf=1, df=50, num_docs=100, **self._kwargs)
         assert rare > common
 
 
