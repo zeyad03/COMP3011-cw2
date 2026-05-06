@@ -280,6 +280,36 @@ class TestRobots:
         assert any(u.endswith("/public") for u in urls)
         assert not any(u.endswith("/private") for u in urls)
 
+    def test_robots_404_falls_back_to_no_restrictions(self) -> None:
+        # robots.txt returns 404 — crawler should proceed with no rules.
+        session = FakeSession(
+            {
+                f"{HOME}/robots.txt": FakeResponse("", status_code=404),
+                f"{HOME}/": _page("Home", _link("/private")),
+                f"{HOME}/private": _page("Private", "ok"),
+            }
+        )
+        crawler = Crawler(delay=0, session=session, respect_robots=True)
+        pages = crawler.crawl(f"{HOME}/")
+        urls = {p.url for p in pages}
+        # /private should now be reachable (no robots restriction applied).
+        assert any(u.endswith("/private") for u in urls)
+
+    def test_robots_request_exception_falls_back(self, mocker: Any) -> None:
+        # A network error during robots.txt fetch must not block the crawl.
+        session = FakeSession({f"{HOME}/": _page("Home", "")})
+
+        def _flaky_get(url: str, **_kw: Any) -> FakeResponse:
+            if url.endswith("/robots.txt"):
+                raise requests.ConnectionError("dns failed")
+            return FakeResponse(_page("Home", ""))
+
+        mocker.patch.object(session, "get", side_effect=_flaky_get)
+        crawler = Crawler(delay=0, session=session, respect_robots=True)
+        pages = crawler.crawl(f"{HOME}/")
+        # The crawl proceeded despite the robots.txt failure.
+        assert len(pages) == 1
+
 
 class TestModuleLevelHelper:
     def test_crawl_function_delegates_to_class(self) -> None:

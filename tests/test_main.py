@@ -188,6 +188,32 @@ class TestBuildCommand:
         assert "crawl failed" in out
         assert "network down" in out
 
+    def test_build_with_extra_args_prints_usage(self, tmp_path: Path) -> None:
+        out = _run(["build foo"], index_path=tmp_path / "out.json")
+        assert "usage: build" in out
+
+    def test_load_with_extra_args_prints_usage(self, tmp_path: Path) -> None:
+        out = _run(["load foo"], index_path=tmp_path / "out.json")
+        assert "usage: load" in out
+
+    def test_build_handles_save_error(
+        self, tmp_path: Path, mocker: Any
+    ) -> None:
+        from src.storage import StorageError
+
+        fake_pages = [Page(url="https://x.com/a", title="", text="hello")]
+        fake_crawler = mocker.MagicMock()
+        fake_crawler.crawl.return_value = fake_pages
+        mocker.patch("src.main.save", side_effect=StorageError("disk full"))
+
+        out = _run(
+            ["build"],
+            index_path=tmp_path / "out.json",
+            crawler_factory=lambda: fake_crawler,
+        )
+        assert "save failed" in out
+        assert "disk full" in out
+
 
 # ----------------------------------------------------------------- parsing
 
