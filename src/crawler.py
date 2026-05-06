@@ -144,7 +144,7 @@ class Crawler:
                     self._backoff(attempt)
                     continue
                 response.raise_for_status()
-                return response.text
+                return str(response.text)
             except requests.RequestException as err:
                 last_err = err
                 self._backoff(attempt)
@@ -194,7 +194,9 @@ class Crawler:
         soup = BeautifulSoup(html, "html.parser")
         links: list[str] = []
         for tag in soup.find_all("a", href=True):
-            href = tag["href"].strip()
+            # bs4 may return AttributeValueList for repeated attributes;
+            # coerce to a plain string.
+            href = str(tag.get("href", "")).strip()
             if not href or href.startswith(("javascript:", "mailto:", "tel:", "#")):
                 continue
             absolute = urljoin(base_url, href)
