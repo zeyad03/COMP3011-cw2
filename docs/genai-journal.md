@@ -6,8 +6,7 @@ specific interaction with the AI tool and what was learned, gained, or
 corrected. The video should pull two or three of the most illustrative
 entries and reflect on them.
 
-> **Tool used**: Claude Code (Anthropic) via the University of Leeds
-> secure access. Model: Claude Opus 4.7 (1M context).
+> **Tool used**: Claude Code (Anthropic).
 
 ---
 
