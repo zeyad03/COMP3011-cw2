@@ -1,0 +1,130 @@
+{
+  "description": "Hand-curated query/relevance pairs against the v1.0 crawl of quotes.toscrape.com (214 pages). Relevance was determined by inspecting the index by hand: each query's relevant URL set is the conservative set of pages a human would expect to see ranked highly. URLs that *contain* the query terms but are not topically central (e.g. an author page that incidentally mentions the term) are excluded.",
+  "queries": [
+    {
+      "id": "q01",
+      "text": "einstein imagination",
+      "rationale": "Einstein's famous quote 'Imagination is more important than knowledge'.",
+      "relevant": [
+        "https://quotes.toscrape.com/author/Albert-Einstein",
+        "https://quotes.toscrape.com/tag/imagination/page/1/",
+        "https://quotes.toscrape.com/page/1/",
+        "https://quotes.toscrape.com/page/2/"
+      ]
+    },
+    {
+      "id": "q02",
+      "text": "austen books",
+      "rationale": "Jane Austen quotes about books and reading.",
+      "relevant": [
+        "https://quotes.toscrape.com/author/Jane-Austen",
+        "https://quotes.toscrape.com/tag/books/page/1/",
+        "https://quotes.toscrape.com/tag/books/page/2/",
+        "https://quotes.toscrape.com/tag/books/",
+        "https://quotes.toscrape.com/tag/classic/page/1/"
+      ]
+    },
+    {
+      "id": "q03",
+      "text": "good friends",
+      "rationale": "The classic 'good friends' query from the brief itself.",
+      "relevant": [
+        "https://quotes.toscrape.com/tag/good/page/1/",
+        "https://quotes.toscrape.com/tag/friends/page/1/",
+        "https://quotes.toscrape.com/tag/friends/",
+        "https://quotes.toscrape.com/tag/friendship/page/1/",
+        "https://quotes.toscrape.com/tag/friendship/"
+      ]
+    },
+    {
+      "id": "q04",
+      "text": "humor classic",
+      "rationale": "Crossover of humor and classic literature tags.",
+      "relevant": [
+        "https://quotes.toscrape.com/tag/humor/page/1/",
+        "https://quotes.toscrape.com/tag/humor/page/2/",
+        "https://quotes.toscrape.com/tag/humor/",
+        "https://quotes.toscrape.com/tag/classic/page/1/"
+      ]
+    },
+    {
+      "id": "q05",
+      "text": "rowling magic",
+      "rationale": "J. K. Rowling and the magic tag.",
+      "relevant": [
+        "https://quotes.toscrape.com/author/J-K-Rowling",
+        "https://quotes.toscrape.com/tag/magic/page/1/"
+      ]
+    },
+    {
+      "id": "q06",
+      "text": "deep thoughts",
+      "rationale": "The 'deep-thoughts' tag is a single semantic unit.",
+      "relevant": [
+        "https://quotes.toscrape.com/tag/deep-thoughts/page/1/"
+      ]
+    },
+    {
+      "id": "q07",
+      "text": "monroe inspirational",
+      "rationale": "Marilyn Monroe is associated with inspirational quotes on this site.",
+      "relevant": [
+        "https://quotes.toscrape.com/author/Marilyn-Monroe",
+        "https://quotes.toscrape.com/tag/inspirational/page/1/",
+        "https://quotes.toscrape.com/tag/inspirational/page/2/",
+        "https://quotes.toscrape.com/tag/inspirational/"
+      ]
+    },
+    {
+      "id": "q08",
+      "text": "edison genius",
+      "rationale": "Edison's famous '1% inspiration, 99% perspiration' quote.",
+      "relevant": [
+        "https://quotes.toscrape.com/author/Thomas-A-Edison",
+        "https://quotes.toscrape.com/tag/edison/page/1/",
+        "https://quotes.toscrape.com/tag/genius/page/1/",
+        "https://quotes.toscrape.com/page/1/"
+      ]
+    },
+    {
+      "id": "q09",
+      "text": "be yourself",
+      "rationale": "Compound tag; tests multi-token tag matching.",
+      "relevant": [
+        "https://quotes.toscrape.com/tag/be-yourself/page/1/"
+      ]
+    },
+    {
+      "id": "q10",
+      "text": "wisdom truth",
+      "rationale": "Two abstract concept tags often co-occurring.",
+      "relevant": [
+        "https://quotes.toscrape.com/tag/wisdom/page/1/",
+        "https://quotes.toscrape.com/tag/truth/page/1/",
+        "https://quotes.toscrape.com/tag/truth/"
+      ]
+    },
+    {
+      "id": "q11",
+      "text": "love romance",
+      "rationale": "Romantic-love crossover.",
+      "relevant": [
+        "https://quotes.toscrape.com/tag/love/page/1/",
+        "https://quotes.toscrape.com/tag/love/page/2/",
+        "https://quotes.toscrape.com/tag/love/",
+        "https://quotes.toscrape.com/tag/romance/page/1/"
+      ]
+    },
+    {
+      "id": "q12",
+      "text": "live miracle",
+      "rationale": "Einstein's 'two ways to live: as if everything is a miracle'.",
+      "relevant": [
+        "https://quotes.toscrape.com/tag/live/page/1/",
+        "https://quotes.toscrape.com/tag/miracle/page/1/",
+        "https://quotes.toscrape.com/tag/miracles/page/1/",
+        "https://quotes.toscrape.com/page/1/"
+      ]
+    }
+  ]
+}
