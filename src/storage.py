@@ -34,8 +34,11 @@ from pathlib import Path
 from typing import Any, cast
 
 from src.indexer import INDEX_VERSION, Index
+from src.vbyte import decode_named_blocks, encode_named_blocks
 
-_SUPPORTED_VERSIONS = frozenset({"1.0", "1.1"})
+_SUPPORTED_VERSIONS = frozenset({"1.0", "1.1", "1.2"})
+
+POSTINGS_SIDECAR_SUFFIX = ".postings.bin"
 
 
 class StorageError(Exception):
@@ -46,26 +49,62 @@ class IndexVersionError(StorageError):
     """Raised when the index file's schema version is incompatible."""
 
 
-def save(index: Index, path: Path | str) -> None:
+def save(
+    index: Index, path: Path | str, *, compress_postings: bool = False
+) -> None:
     """Atomically write *index* to *path* as JSON.
 
     The parent directory is created if necessary. Any partially-written
     temp file is removed if serialisation raises. Positions are stored
     in delta-encoded form on disk for compactness.
+
+    If *compress_postings* is true, the delta-encoded positions are
+    moved into a binary sidecar (``<path>.postings.bin``) using the
+    VByte format defined in :mod:`src.vbyte`. The JSON payload still
+    carries every other field, plus a ``meta.has_postings_bin`` flag so
+    :func:`load` knows to read the sidecar back. Both files are written
+    atomically; either both succeed or neither replaces the previous
+    pair.
     """
     encoded = _encode_for_disk(index)
     target = Path(path)
     target.parent.mkdir(parents=True, exist_ok=True)
-    fd, tmp_name = tempfile.mkstemp(
+    sidecar_target = target.with_name(target.name + POSTINGS_SIDECAR_SUFFIX)
+
+    sidecar_payload: bytes | None = None
+    if compress_postings:
+        sidecar_payload = _extract_postings_sidecar(encoded)
+        encoded["meta"]["has_postings_bin"] = True
+    else:
+        encoded["meta"].pop("has_postings_bin", None)
+
+    fd, tmp_json = tempfile.mkstemp(
         dir=target.parent, prefix=target.name + ".", suffix=".tmp"
     )
+    tmp_sidecar: str | None = None
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as fp:
             json.dump(encoded, fp, ensure_ascii=False, indent=2, sort_keys=True)
-        os.replace(tmp_name, target)
+        if sidecar_payload is not None:
+            sfd, tmp_sidecar = tempfile.mkstemp(
+                dir=target.parent,
+                prefix=sidecar_target.name + ".",
+                suffix=".tmp",
+            )
+            with os.fdopen(sfd, "wb") as sp:
+                sp.write(sidecar_payload)
+            os.replace(tmp_sidecar, sidecar_target)
+            tmp_sidecar = None
+        elif sidecar_target.exists():
+            # An old sidecar from a previous compressed save would
+            # otherwise mislead future loads.
+            sidecar_target.unlink()
+        os.replace(tmp_json, target)
     except Exception:
-        if os.path.exists(tmp_name):
-            os.unlink(tmp_name)
+        if os.path.exists(tmp_json):
+            os.unlink(tmp_json)
+        if tmp_sidecar is not None and os.path.exists(tmp_sidecar):
+            os.unlink(tmp_sidecar)
         raise
 
 
@@ -97,7 +136,18 @@ def load(path: Path | str) -> Index:
             f"index version {version!r} not in supported set "
             f"{sorted(_SUPPORTED_VERSIONS)}"
         )
-    if version == "1.1":
+    if data.get("meta", {}).get("has_postings_bin"):
+        sidecar_path = target.with_name(target.name + POSTINGS_SIDECAR_SUFFIX)
+        if not sidecar_path.exists():
+            raise StorageError(
+                f"index references VByte sidecar {sidecar_path.name} but the "
+                f"file is missing"
+            )
+        with sidecar_path.open("rb") as sp:
+            blocks = decode_named_blocks(sp.read())
+        _restore_postings_from_sidecar(data, blocks)
+        data["meta"].pop("has_postings_bin", None)  # transparent to callers
+    if version in ("1.1", "1.2"):
         _delta_decode_in_place(data)
     return cast(Index, data)
 
@@ -109,13 +159,22 @@ def _encode_for_disk(index: Index) -> dict[str, Any]:
     """Return a deep copy of *index* with positions delta-encoded.
 
     The input is left untouched; in-memory callers continue to see
-    absolute positions.
+    absolute positions. Per-field positions (v1.2+, BM25F) are
+    delta-encoded with the same scheme as the combined positions list.
     """
     copied: dict[str, Any] = copy.deepcopy(dict(index))
     copied["meta"]["version"] = INDEX_VERSION
     for entry in copied["terms"].values():
         for posting in entry["postings"].values():
             posting["positions"] = _delta_encode(posting["positions"])
+            if "title_positions" in posting:
+                posting["title_positions"] = _delta_encode(
+                    posting["title_positions"]
+                )
+            if "body_positions" in posting:
+                posting["body_positions"] = _delta_encode(
+                    posting["body_positions"]
+                )
     return copied
 
 
@@ -129,10 +188,23 @@ def _delta_encode(positions: list[int]) -> list[int]:
 
 
 def _delta_decode_in_place(data: dict[str, Any]) -> None:
-    """Decode delta-encoded positions in *data* (mutates in place)."""
+    """Decode delta-encoded positions in *data* (mutates in place).
+
+    Decodes the combined ``positions`` list and (for v1.2 indexes that
+    carry them) the per-field ``title_positions`` and ``body_positions``
+    lists.
+    """
     for entry in data["terms"].values():
         for posting in entry["postings"].values():
             posting["positions"] = _delta_decode(posting["positions"])
+            if "title_positions" in posting:
+                posting["title_positions"] = _delta_decode(
+                    posting["title_positions"]
+                )
+            if "body_positions" in posting:
+                posting["body_positions"] = _delta_decode(
+                    posting["body_positions"]
+                )
 
 
 def _delta_decode(deltas: list[int]) -> list[int]:
@@ -145,4 +217,45 @@ def _delta_decode(deltas: list[int]) -> list[int]:
     return out
 
 
-__all__ = ["StorageError", "IndexVersionError", "save", "load"]
+def _extract_postings_sidecar(encoded: dict[str, Any]) -> bytes:
+    """Move the (already delta-encoded) position lists into a VByte block.
+
+    Mutates *encoded* in place, replacing each posting's positions list
+    with an empty list. Each block is keyed by a structured string of
+    the form ``term\\t<doc_id>\\t<field>``, where field is ``"positions"``,
+    ``"title_positions"``, or ``"body_positions"``. The keys are not
+    user-visible; they only need to round-trip.
+    """
+    blocks: dict[str, list[int]] = {}
+    for term, entry in encoded["terms"].items():
+        for doc_id, posting in entry["postings"].items():
+            for field in ("positions", "title_positions", "body_positions"):
+                if field in posting:
+                    key = f"{term}\t{doc_id}\t{field}"
+                    blocks[key] = posting[field]
+                    posting[field] = []
+    return encode_named_blocks(blocks)
+
+
+def _restore_postings_from_sidecar(
+    data: dict[str, Any], blocks: dict[str, list[int]]
+) -> None:
+    """Inverse of :func:`_extract_postings_sidecar`. Mutates *data*."""
+    for key, values in blocks.items():
+        term, doc_id, field = key.split("\t")
+        try:
+            posting = data["terms"][term]["postings"][doc_id]
+        except KeyError as err:
+            raise StorageError(
+                f"sidecar references missing posting {term!r}/{doc_id!r}"
+            ) from err
+        posting[field] = values
+
+
+__all__ = [
+    "POSTINGS_SIDECAR_SUFFIX",
+    "StorageError",
+    "IndexVersionError",
+    "save",
+    "load",
+]

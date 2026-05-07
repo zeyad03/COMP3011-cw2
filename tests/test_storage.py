@@ -161,11 +161,14 @@ class TestDeltaCompression:
         assert _delta_encode(absolute) == deltas
         assert _delta_decode(deltas) == absolute
 
-    def test_save_writes_v11_format(self, tmp_path: Path) -> None:
+    def test_save_writes_current_version(self, tmp_path: Path) -> None:
         target = tmp_path / "idx.json"
         save(_index(), target)
         on_disk = json.loads(target.read_text())
-        assert on_disk["meta"]["version"] == "1.1"
+        # Version is bumped each time the schema changes; we just check
+        # the file gets stamped with whatever the indexer is producing.
+        from src.indexer import INDEX_VERSION
+        assert on_disk["meta"]["version"] == INDEX_VERSION
 
     def test_save_does_not_mutate_caller_index(self, tmp_path: Path) -> None:
         idx = _index()
@@ -235,3 +238,57 @@ class TestDeltaCompression:
         )
         with pytest.raises(IndexVersionError):
             load(target)
+
+
+class TestVByteSidecar:
+    """Phase F: positions can live in a binary sidecar."""
+
+    def test_round_trip_with_compression(self, tmp_path: Path) -> None:
+        idx = _index()
+        target = tmp_path / "idx.json"
+        save(idx, target, compress_postings=True)
+        sidecar = target.with_name(target.name + ".postings.bin")
+        assert sidecar.exists()
+        loaded = load(target)
+        assert loaded == idx
+
+    def test_sidecar_is_smaller_than_uncompressed_positions(
+        self, tmp_path: Path
+    ) -> None:
+        # Build an index with rich, repeated positions to make the
+        # delta distribution non-trivial.
+        pages = [
+            Page(
+                url=f"https://x.com/{i}",
+                title=f"Doc {i}",
+                text=" ".join(["the"] * 200 + ["lazy"] * 50),
+            )
+            for i in range(5)
+        ]
+        idx = build_index(pages)
+        plain = tmp_path / "plain.json"
+        comp = tmp_path / "comp.json"
+        save(idx, plain)
+        save(idx, comp, compress_postings=True)
+        plain_size = plain.stat().st_size
+        comp_size = comp.stat().st_size + comp.with_name(
+            comp.name + ".postings.bin"
+        ).stat().st_size
+        assert comp_size < plain_size
+
+    def test_missing_sidecar_raises(self, tmp_path: Path) -> None:
+        target = tmp_path / "idx.json"
+        save(_index(), target, compress_postings=True)
+        sidecar = target.with_name(target.name + ".postings.bin")
+        sidecar.unlink()
+        with pytest.raises(StorageError, match="sidecar"):
+            load(target)
+
+    def test_overwrite_compressed_with_uncompressed_clears_sidecar(
+        self, tmp_path: Path
+    ) -> None:
+        target = tmp_path / "idx.json"
+        save(_index(), target, compress_postings=True)
+        save(_index(), target, compress_postings=False)
+        sidecar = target.with_name(target.name + ".postings.bin")
+        assert not sidecar.exists()

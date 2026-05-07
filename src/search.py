@@ -24,7 +24,9 @@ from io import StringIO
 from typing import Literal
 
 from src.indexer import Index, Posting
-from src.ranker import Ranker, TFIDFRanker
+from src.query_eval import collect_terms, evaluate
+from src.query_parser import ParseError, has_boolean_operators, parse
+from src.ranker import Ranker, TFIDFRanker, supports_fields
 from src.tokenizer import tokenize
 
 
@@ -114,6 +116,34 @@ def find(
     if ranker is None:
         ranker = TFIDFRanker()
 
+    # ----------- Boolean query path (Phase C). -----------
+    if has_boolean_operators(query):
+        try:
+            ast = parse(query)
+        except ParseError:
+            # Malformed boolean query: fall through to plain AND search.
+            ast = None
+        if ast is not None:
+            scoring_terms = [
+                t for t in collect_terms(ast) if t in index["terms"]
+            ]
+            if not scoring_terms:
+                return []
+            bool_candidates = evaluate(ast, index)
+            if not bool_candidates:
+                return []
+            return _score_candidates(
+                index=index,
+                tokens=scoring_terms,
+                postings_per_term=[
+                    index["terms"][t]["postings"] for t in scoring_terms
+                ],
+                candidate_ids=bool_candidates,
+                ranker=ranker,
+                explain=explain,
+                top_k=top_k,
+            )
+
     tokens = tokenize(query)
     if not tokens:
         return []
@@ -143,23 +173,77 @@ def find(
         if not candidate_ids:
             return []
 
+    return _score_candidates(
+        index=index,
+        tokens=tokens,
+        postings_per_term=postings_per_term,
+        candidate_ids=candidate_ids,
+        ranker=ranker,
+        explain=explain,
+        top_k=top_k,
+    )
+
+
+def _score_candidates(
+    *,
+    index: Index,
+    tokens: list[str],
+    postings_per_term: list[dict[str, Posting]],
+    candidate_ids: set[str],
+    ranker: Ranker,
+    explain: bool,
+    top_k: int | None,
+) -> list[SearchResult]:
+    """Shared scoring loop for the AND-search and boolean-query paths.
+
+    *tokens* and *postings_per_term* are positional pairs. A document
+    that does not appear in a given posting list contributes 0 for that
+    term (the boolean evaluator may admit such documents via Or/Not).
+    """
     num_docs = index["meta"]["num_docs"]
     avg_doc_length = _avg_doc_length(index)
+    avg_title_length = _avg_field_length(index, "title_length")
+    avg_body_length = _avg_field_length(index, "body_length")
+    use_fielded = supports_fields(ranker) and _index_has_fields(index)
     results: list[SearchResult] = []
     for doc_id in candidate_ids:
         doc = index["docs"][doc_id]
         score = 0.0
         contributions: list[TermContribution] = []
         for token, postings in zip(tokens, postings_per_term):
+            posting = postings.get(doc_id)
+            if posting is None:
+                if explain:
+                    df = index["terms"][token]["df"]
+                    contributions.append(
+                        TermContribution(
+                            term=token, tf=0, df=df, contribution=0.0
+                        )
+                    )
+                continue
             df = index["terms"][token]["df"]
-            tf = postings[doc_id]["tf"]
-            term_score = ranker.score(
-                tf=tf,
-                df=df,
-                num_docs=num_docs,
-                doc_length=doc["length"],
-                avg_doc_length=avg_doc_length,
-            )
+            tf = posting["tf"]
+            if use_fielded:
+                term_score = ranker.score_fielded(  # type: ignore[attr-defined]
+                    tf_title=len(posting.get("title_positions", [])),
+                    tf_body=len(posting.get("body_positions", [])),
+                    df=df,
+                    num_docs=num_docs,
+                    title_length=doc.get("title_length", 0),
+                    body_length=doc.get(
+                        "body_length", doc["length"]
+                    ),
+                    avg_title_length=avg_title_length,
+                    avg_body_length=avg_body_length,
+                )
+            else:
+                term_score = ranker.score(
+                    tf=tf,
+                    df=df,
+                    num_docs=num_docs,
+                    doc_length=doc["length"],
+                    avg_doc_length=avg_doc_length,
+                )
             score += term_score
             if explain:
                 contributions.append(
@@ -194,6 +278,31 @@ def _avg_doc_length(index: Index) -> float:
     return sum(d["length"] for d in docs.values()) / len(docs)
 
 
+def _avg_field_length(index: Index, key: str) -> float:
+    """Average length over a per-field token-count key, or 0 on missing key."""
+    docs = index["docs"]
+    if not docs:
+        return 0.0
+    total = 0
+    seen = 0
+    for d in docs.values():
+        if key in d:
+            total += int(d[key])  # type: ignore[literal-required]
+            seen += 1
+    if seen == 0:
+        return 0.0
+    return total / seen
+
+
+def _index_has_fields(index: Index) -> bool:
+    """True if the index carries per-field positions (v1.2+)."""
+    docs = index["docs"]
+    if not docs:
+        return False
+    sample = next(iter(docs.values()))
+    return "title_length" in sample and "body_length" in sample
+
+
 def _is_adjacent_in_doc(
     postings_per_term: list[dict[str, Posting]], doc_id: str
 ) -> bool:
@@ -215,12 +324,21 @@ def suggest(
     *,
     max_distance: int = 2,
     max_suggestions: int = 5,
+    symspell: object | None = None,
 ) -> list[str]:
     """Return known terms within *max_distance* edits of *word*.
 
     Returns ``[]`` if *word* is itself in the index (no need to suggest)
     or empty. Suggestions are ordered by edit distance ascending, then
     alphabetically.
+
+    If a pre-built :class:`~src.symspell.SymSpell` index is passed via
+    *symspell*, the lookup uses the SymSpell deletion-dictionary
+    algorithm (O(L^d) instead of O(N·L²) for vocabulary size N). The
+    output is identical to the Levenshtein scan; only the runtime
+    differs. When *symspell* is ``None`` the original Levenshtein scan
+    is used so callers without a pre-built index still get correct
+    results.
     """
     tokens = tokenize(word)
     if not tokens:
@@ -228,6 +346,15 @@ def suggest(
     target = tokens[0]
     if target in index["terms"]:
         return []
+
+    if symspell is not None:
+        # Delegated path: SymSpell.lookup post-verifies with _levenshtein,
+        # so output ordering matches the linear scan exactly.
+        return symspell.lookup(  # type: ignore[no-any-return,attr-defined]
+            target,
+            max_distance=max_distance,
+            max_suggestions=max_suggestions,
+        )
 
     candidates: list[tuple[int, str]] = []
     for term in index["terms"]:

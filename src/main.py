@@ -18,12 +18,14 @@ import sys
 from pathlib import Path
 from typing import Callable, TextIO
 
+from src.autocomplete import TermTrie, build_trie
 from src.crawler import DEFAULT_DELAY, Crawler
 from src.indexer import Index, build_index
 from src.ranker import RANKERS, Ranker, TFIDFRanker
 from src.search import find, print_term, suggest
 from src.snippet import generate_snippet
 from src.storage import StorageError, load, save
+from src.symspell import SymSpell, build_symspell
 from src.tokenizer import tokenize
 
 DEFAULT_INDEX_PATH: Path = Path("data/index.json")
@@ -67,11 +69,14 @@ class CLI:
             lambda: Crawler(delay=crawler_delay, verbose=True)
         )
         self._index: Index | None = None
+        self._trie: TermTrie | None = None
+        self._symspell: SymSpell | None = None
         self._handlers: dict[str, CommandHandler] = {
             "build": self._cmd_build,
             "load": self._cmd_load,
             "print": self._cmd_print,
             "find": self._cmd_find,
+            "suggest": self._cmd_suggest,
             "help": self._cmd_help,
             "exit": self._cmd_exit,
             "quit": self._cmd_exit,
@@ -133,6 +138,8 @@ class CLI:
             return True
         self._print(f"crawled {len(pages)} pages; indexing...")
         self._index = build_index(pages)
+        self._trie = build_trie(self._index)
+        self._symspell = build_symspell(self._index)
         try:
             save(self._index, self._index_path)
         except StorageError as err:
@@ -154,6 +161,8 @@ class CLI:
         except StorageError as err:
             self._print(f"load failed: {err}")
             return True
+        self._trie = build_trie(self._index)
+        self._symspell = build_symspell(self._index)
         meta = self._index["meta"]
         self._print(
             f"loaded {self._index_path}: "
@@ -216,15 +225,39 @@ class CLI:
                     self._print(f"     {excerpt}")
         return True
 
+    def _cmd_suggest(self, args: list[str]) -> bool:
+        if self._index is None or self._trie is None:
+            self._print("no index loaded. Run 'build' or 'load' first.")
+            return True
+        if len(args) != 1:
+            self._print("usage: suggest <prefix>")
+            return True
+        prefix = tokenize(args[0])
+        if not prefix:
+            self._print("empty prefix.")
+            return True
+        results = self._trie.suggest(prefix[0], k=10)
+        if not results:
+            self._print(f"no terms with prefix {prefix[0]!r}.")
+            return True
+        self._print(", ".join(results))
+        return True
+
     def _cmd_help(self, _args: list[str]) -> bool:
         self._print("Commands:")
         self._print("  build              crawl the website and build the index")
         self._print("  load               load the saved index from disk")
         self._print("  print <word>       print the inverted index for a word")
         self._print(
-            "  find [--ranker R] [--explain] [--snippet] <words...>"
+            "  find [--ranker R] [--explain] [--snippet] <query>"
         )
-        self._print("                     R in {tfidf,bm25,frequency}")
+        self._print("                     R in {tfidf,bm25,bm25f,frequency}")
+        self._print(
+            "                     <query> may use AND/OR/NOT and parentheses"
+        )
+        self._print(
+            "  suggest <prefix>   list indexed terms beginning with <prefix>"
+        )
         self._print("  help               show this message")
         self._print("  exit | quit        leave the shell")
         return True
@@ -240,7 +273,9 @@ class CLI:
             return
         for token in tokenize(query):
             if token not in self._index["terms"]:
-                suggestions = suggest(self._index, token)
+                suggestions = suggest(
+                    self._index, token, symspell=self._symspell
+                )
                 if suggestions:
                     self._print(
                         f"did you mean: {', '.join(suggestions)}"
