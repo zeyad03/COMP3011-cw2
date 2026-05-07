@@ -1,0 +1,43 @@
+# Pre-commit hooks for the COMP3011-CW2 search engine.
+#
+# Install once with `pre-commit install`. Subsequent commits will run:
+#   1. ruff (lint + autofix; format)
+#   2. mypy --strict on src/
+#   3. the smoke-test subset of the pytest suite (fast — under 100 ms)
+#
+# The full pytest suite still runs in CI; this is the local fast loop.
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-added-large-files
+        args: ["--maxkb=2048"]
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.8.6
+    hooks:
+      - id: ruff
+        args: ["--fix"]
+      - id: ruff-format
+
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.13.0
+    hooks:
+      - id: mypy
+        args: ["--strict"]
+        files: ^src/
+        additional_dependencies:
+          - types-requests>=2.32
+
+  - repo: local
+    hooks:
+      - id: pytest-smoke
+        name: pytest smoke
+        entry: pytest -q tests/test_smoke.py
+        language: system
+        types: [python]
+        pass_filenames: false
