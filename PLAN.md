@@ -9,23 +9,50 @@
 
 ## Progress (live)
 
+### v1.0 / v1.1 phases (original brief)
+
 | Phase | Status | Notes |
 | --- | --- | --- |
 | 0 — Scaffold | ✅ | Python pkg, deps, pytest, CI, README skeleton |
-| 1 — Tokeniser | ✅ | 22 tests, 100% coverage |
-| 2 — Crawler | ✅ | Polite BFS, retries, robots.txt; 25 tests, 100% coverage |
-| 3 — Indexer | ✅ | Positional inverted index, TypedDicts; 17 tests, 100% coverage |
-| 4 — Storage | ✅ | Atomic JSON, schema versioning; 13 tests, 100% coverage |
-| 5 — Search | ✅ | TF-IDF, phrase mode, suggestions; 42 tests, 100% coverage |
-| 6 — CLI | ✅ | REPL with build/load/print/find; 24 tests, 96% coverage |
-| 7 — Real crawl | 🟡 | Running (~6 s × ~80 pages ≈ 8–10 min) |
-| 8 — Advanced | ✅ | Phrase queries + suggestions in §5; benchmark suite added |
-| 9 — Polish | ✅ | mypy --strict clean, types-requests, integration fixtures |
-| 10 — Docs | ✅ | README, design.md (§§1–9), GenAI journal scaffold |
-| 12 — Submit | ⏳ | After tagging v1.0.0 and pushing to GitHub |
+| 1 — Tokeniser | ✅ | 100% coverage |
+| 2 — Crawler | ✅ | Polite BFS, retries, robots.txt |
+| 3 — Indexer | ✅ | Positional inverted index, TypedDicts |
+| 4 — Storage | ✅ | Atomic JSON, schema versioning |
+| 5 — Search | ✅ | TF-IDF, phrase mode, suggestions |
+| 6 — CLI | ✅ | REPL with build/load/print/find |
+| 7 — Real crawl | ✅ | 214 pages crawled; index in `data/index.json` (4 646 terms) |
+| 8 — Advanced | ✅ | Phrase queries, suggestions, benchmark suite |
+| 9 — Polish | ✅ | `mypy --strict` clean, types-requests, integration fixtures |
+| 10 — Docs | ✅ | README, `docs/design.md`, GenAI journal |
+| 11 — Video | 🟡 | Script drafted; recording pending |
+| 12 — Submit | ⏳ | Submission deadline 8 May 2026; v2.0.0 tagged and pushed |
 
-**Current totals**: 152 tests, 99% line coverage, mypy strict clean,
-~7 phases worth of commits.
+### v2.0.0 portfolio phases (post-v1.1)
+
+| Phase | Status | Notes |
+| --- | --- | --- |
+| A — Hybrid + dense retrieval | ✅ | `DenseRanker` (lazy sentence-transformers), `HybridRanker` (RRF, k=60) |
+| B — Learning-to-rank | ✅ | LightGBM LambdaRank with leave-one-query-out CV; runtime tests gated on libomp |
+| C — Boolean queries | ✅ | Pratt parser; `AND`/`OR`/`NOT` + parens; precedence `NOT > AND > OR` |
+| D — SymSpell | ✅ | Deletion-dictionary spell correction; output identical to Levenshtein |
+| E — BM25F | ✅ | Per-field weighted BM25; v1.2 schema with title/body positions |
+| F — VByte sidecar | ✅ | Variable-byte posting compression with documented file format |
+| H — Trie autocomplete | ✅ | `suggest <prefix>` over a prefix Trie, ranked by collection frequency |
+| I — Crawler dedup | ✅ | Body-hash dedup of alias URLs (frontier expansion preserved) |
+| K — Docker + Makefile | ✅ | `Dockerfile`, `Makefile` targets (test/typecheck/eval/docker/...) |
+| L — Pre-commit | ✅ | `.pre-commit-config.yaml`: ruff, `mypy --strict`, smoke pytest |
+| G — Memory-mapped postings | ⏭️ | Out of scope (depends on a binary postings format we did ship in F) |
+| J — `prompt_toolkit` REPL | ⏭️ | Out of scope (pure DX; no IR signal) |
+| M — Mutation testing (mutmut) | ⏭️ | Out of scope (high time variance, low marginal coverage) |
+
+**Current totals**: 332 tests passing (+2 environment-skipped),
+95% line coverage, `mypy --strict` clean across 17 source files,
+13 v2.0.0 commits on top of the v1.1 line.
+
+**Release tags**: `v1.0.0` (initial submission baseline) → `v1.1.0`
+(BM25 + evaluation framework + delta encoding + property tests +
+snippets + sklearn cross-check + GenAI literature engagement) →
+`v2.0.0` (this section's table).
 
 ---
 
@@ -614,19 +641,28 @@ Buffer is intentionally placed on the deadline morning to absorb slippage.
 
 The project is ready to submit when:
 
-- [ ] All four required commands (`build`, `load`, `print`, `find`) work as specified in the brief.
-- [ ] `find good friends` returns a non-empty, ranked list against the committed index.
-- [ ] `find xyzzy` returns "no results" with a graceful message.
-- [ ] `pytest` passes with ≥ 85% coverage.
-- [ ] `mypy --strict src/` passes.
-- [ ] CI workflow is green on `main`.
-- [ ] `data/index.json` exists, loads without error, covers all pages of the target site.
-- [ ] README has all five required sections (overview, install, usage, testing, dependencies).
-- [ ] `docs/design.md` exists with schema, rationale, and complexity analysis.
-- [ ] `docs/genai-journal.md` has ≥ 6 dated entries.
+- [x] All four required commands (`build`, `load`, `print`, `find`) work as specified in the brief.
+- [x] `find good friends` returns a non-empty, ranked list against the committed index.
+- [x] `find xyzzy` returns "no results" with a graceful message.
+- [x] `pytest` passes with ≥ 85% coverage. *(332 tests, 95% coverage as of v2.0.0.)*
+- [x] `mypy --strict src/` passes.
+- [x] CI workflow is green on `main`.
+- [x] `data/index.json` exists, loads without error, covers all pages of the target site. *(214 pages, 4 646 terms.)*
+- [x] README has all five required sections (overview, install, usage, testing, dependencies). *(Plus a Changelog and table of contents.)*
+- [x] `docs/design.md` exists with schema, rationale, and complexity analysis. *(Now also covers BM25F, dense+hybrid, LTR, boolean queries, VByte.)*
+- [x] `docs/genai-journal.md` has ≥ 6 dated entries.
 - [ ] Video is ≤ 5 minutes, uploaded unlisted, link verified in incognito.
-- [ ] Repo is public, has at least one tagged release.
+- [x] Repo is public, has at least one tagged release. *(`v1.0.0`, `v1.1.0`, `v2.0.0`.)*
 - [ ] Submission document (PDF or TXT) is prepared with both URLs and submitted via Minerva.
+
+**v2.0.0 acceptance extras** (post-v1.1, optional but met):
+
+- [x] Five sparse rankers selectable from the CLI (`frequency`, `tfidf`, `bm25`, `bm25f`, plus opt-in `dense`, `hybrid`, `ltr`).
+- [x] Boolean queries (`AND`/`OR`/`NOT`, parens) on the same `find` command.
+- [x] Prefix autocomplete via `suggest <prefix>`.
+- [x] Optional VByte binary posting sidecar with a documented format.
+- [x] Pre-commit hooks (`ruff`, `mypy --strict`, smoke pytest) installed locally.
+- [x] Reproducible Docker image and `Makefile` targets.
 
 ---
 
