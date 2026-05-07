@@ -6,6 +6,9 @@ pytest-mock>=3.12
 mypy>=1.10
 types-requests>=2.32
 
+# Local pre-commit gate (ruff, mypy, smoke pytest); see .pre-commit-config.yaml.
+pre-commit>=4.0
+
 # Used only by evaluation/compare_sklearn.py for empirical
 # comparison; not required to run the search engine itself.
 scikit-learn>=1.5
