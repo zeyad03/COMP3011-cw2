@@ -9,6 +9,10 @@ BM25F, and an optional dense / hybrid / learning-to-rank pipeline).
 
 > Coursework 2 for **COMP3011 — Web Services and Web Data**, University of Leeds.
 
+**Current release:** [`v2.0.0`](https://github.com/zeyad03/COMP3011-cw2/releases/tag/v2.0.0)
+— hybrid retrieval, BM25F, boolean queries, learning-to-rank, VByte
+posting compression. See the [Changelog](#changelog) at the bottom.
+
 ## Highlights
 
 - **Polite crawler**: BFS over the seed host with a strict 6-second
@@ -208,6 +212,7 @@ Development:
 - `pytest`, `pytest-cov`, `pytest-mock` — testing framework + coverage
 - `mypy` — static type checking
 - `hypothesis` — property-based tests for the storage and ranker invariants
+- `pre-commit` — local hook gate (ruff, mypy, smoke pytest)
 - `numpy` — required for the dense ranker tests; lazy import elsewhere
 - `lightgbm` — learning-to-rank training (macOS additionally needs
   `brew install libomp`)
@@ -254,6 +259,74 @@ cw2/
 ├── Makefile                # Common targets (test/typecheck/eval/...)
 └── .pre-commit-config.yaml # ruff, mypy, smoke pytest
 ```
+
+## Changelog
+
+### v2.0.0 (2026-05-07)
+
+Major release. Headline change: the project now ships **five sparse
+rankers and an opt-in dense / hybrid / learning-to-rank pipeline**,
+**boolean queries**, **per-field BM25F scoring**, **VByte posting
+compression**, and a **prefix-trie autocomplete** — all behind the
+same `find` and `suggest` commands.
+
+**Retrieval & ranking**
+- `BM25FRanker` (`--ranker bm25f`): per-field BM25 with title weighted
+  5× over body, plus per-field length normalisation. Falls back to
+  plain BM25 when the index lacks field positions.
+- `DenseRanker`: sentence-transformer embeddings + cosine similarity
+  (`sentence-transformers/all-MiniLM-L6-v2`, 384-dim, lazy-imported).
+  Embeddings persist to `<index>.embeddings.npy`.
+- `HybridRanker`: reciprocal-rank fusion (Cormack 2009, `k=60`) of any
+  two list-level rankers.
+- `LTRRanker`: LightGBM LambdaRank model. Trained by
+  `evaluation/learning_to_rank.py` with leave-one-query-out CV across
+  the 12-query gold standard (six features per query/doc pair).
+
+**Search**
+- Boolean query parser (`AND`, `OR`, `NOT`, parens; precedence
+  `NOT > AND > OR`). Plain space-separated queries still take the
+  unchanged AND-intersection path.
+- SymSpell deletion-dictionary spell correction — output identical to
+  the Levenshtein scan, lookup independent of vocabulary size.
+- Prefix-trie autocomplete via the new `suggest <prefix>` command,
+  ranked by collection frequency.
+
+**Index & storage**
+- v1.2 schema adds `title_length` / `body_length` per doc and
+  `title_positions` / `body_positions` per posting. v1.0 and v1.1
+  files still load.
+- Optional VByte binary posting sidecar (`storage.save(...,
+  compress_postings=True)` writes `<path>.postings.bin`). The format
+  is documented in `docs/design.md` §7.1 so the index is recoverable
+  from spec alone.
+- `scripts/migrate_index_to_v12.py` upgrades a v1.1 index to v1.2
+  in place without re-crawling.
+
+**Crawler**
+- Content-hash dedup of alias URLs (`/tag/love/` and
+  `/tag/love/page/1/` both serve the same body — only one ends up in
+  the index, but frontier expansion still runs on the alias).
+
+**Tooling**
+- `Dockerfile` + `Makefile` for reproducible builds.
+- `.pre-commit-config.yaml` (ruff, mypy `--strict`, smoke pytest).
+- 332 tests pass, 2 skip (the lightgbm native runtime is missing on
+  bare macOS without `brew install libomp`; one pre-existing
+  ranker-protocol skip). Coverage 95 %; `mypy --strict` clean across
+  17 source files.
+
+### v1.1.0 (2026-04-29)
+
+- BM25 ranker; evaluation framework (gold standard + IR metrics);
+  `--explain`; sklearn cross-check; delta compression; property
+  tests; `--snippet` excerpts.
+
+### v1.0.0 (2026-04-22)
+
+- Initial release: BFS crawler, positional inverted index, TF-IDF
+  ranker, phrase mode, "did you mean" Levenshtein suggestions,
+  atomic versioned JSON storage, interactive REPL.
 
 ## Licence
 

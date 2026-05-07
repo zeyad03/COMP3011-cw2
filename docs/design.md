@@ -5,6 +5,10 @@ algorithmic choices behind the search engine. Companion to the public
 [`README.md`](../README.md), which describes how to install and use the
 tool.
 
+**Tracks release `v2.0.0`** (index schema `v1.2`). The release-by-release
+delta lives in the README's [Changelog](../README.md#changelog); this
+document covers what *currently* exists, not how it got here.
+
 ## 1. Architecture
 
 ```
