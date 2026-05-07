@@ -19,3 +19,9 @@ hypothesis>=6.100
 # retrieval pipeline:
 #     pip install 'sentence-transformers>=3.0'
 numpy>=1.26
+
+# Phase B (learning-to-rank): training the LambdaRank model. On macOS
+# the native runtime additionally requires libomp:
+#     brew install libomp
+# Tests skip gracefully if the lightgbm runtime can't load.
+lightgbm>=4.0
