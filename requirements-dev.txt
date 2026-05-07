@@ -12,3 +12,10 @@ scikit-learn>=1.5
 
 # Property-based testing in tests/test_properties.py.
 hypothesis>=6.100
+
+# Phase A (dense retrieval): numpy is required for the dense ranker
+# tests; sentence-transformers is opt-in (>~80 MB model download).
+# Install sentence-transformers manually if you want the full dense
+# retrieval pipeline:
+#     pip install 'sentence-transformers>=3.0'
+numpy>=1.26
