@@ -15,6 +15,7 @@ argument so tests can use a smaller value (and patch :func:`time.sleep`).
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import time
 from collections import deque
@@ -61,6 +62,10 @@ class Crawler:
         backoff_base: Exponent base for retry backoff (``base ** attempt``).
         respect_robots: If true, fetch and honour ``/robots.txt``.
         session: Optional pre-configured :class:`requests.Session`.
+        deduplicate: If true, skip pages whose extracted text is identical
+            to a page already crawled. The site exposes alias URLs (e.g.
+            ``/tag/love/`` and ``/tag/love/page/1/``); without dedup both
+            land in the index and pollute search.
     """
 
     def __init__(
@@ -75,6 +80,7 @@ class Crawler:
         respect_robots: bool = True,
         session: requests.Session | None = None,
         verbose: bool = False,
+        deduplicate: bool = True,
     ) -> None:
         if delay < 0:
             raise ValueError("delay must be non-negative")
@@ -90,6 +96,7 @@ class Crawler:
         self._session = session if session is not None else requests.Session()
         self._session.headers.update({"User-Agent": user_agent})
         self._verbose = verbose
+        self._deduplicate = deduplicate
         self._last_request_at: float | None = None
 
     def crawl(self, start_url: str) -> list[Page]:
@@ -102,6 +109,7 @@ class Crawler:
 
         visited: set[str] = set()
         pages: list[Page] = []
+        seen_hashes: dict[str, str] = {}  # text-hash -> first URL with it
         frontier: deque[str] = deque([self._normalise(start_url)])
 
         while frontier:
@@ -123,6 +131,25 @@ class Crawler:
                 continue
 
             title, text = self._extract_text(html)
+            if self._deduplicate:
+                digest = hashlib.sha1(text.encode("utf-8")).hexdigest()
+                seen_url = seen_hashes.get(digest)
+                if seen_url is not None:
+                    logger.info(
+                        "duplicate content at %s (matches %s); skipping",
+                        url,
+                        seen_url,
+                    )
+                    # Still mine the page for new links: alias URLs may
+                    # surface frontier expansions we'd otherwise miss.
+                    for link in self._extract_links(html, base_url=url):
+                        if urlparse(link).netloc != host:
+                            continue
+                        norm = self._normalise(link)
+                        if norm not in visited:
+                            frontier.append(norm)
+                    continue
+                seen_hashes[digest] = url
             pages.append(Page(url=url, title=title, text=text))
             if self._verbose:
                 print(f"  [{len(pages):>3}] {url}", flush=True)

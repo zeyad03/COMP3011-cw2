@@ -311,6 +311,65 @@ class TestRobots:
         assert len(pages) == 1
 
 
+class TestContentDedup:
+    """Phase I: alias URLs serving the same body must not enter the index twice."""
+
+    def test_duplicate_body_is_skipped(self) -> None:
+        # /tag/love/ and /tag/love/page/1/ render identical content.
+        identical = _page("Love", "love quotes here all the same")
+        session = FakeSession(
+            {
+                f"{HOME}/": _page(
+                    "Home", _link("/tag/love/") + _link("/tag/love/page/1/")
+                ),
+                f"{HOME}/tag/love/": identical,
+                f"{HOME}/tag/love/page/1/": identical,
+            }
+        )
+        crawler = Crawler(
+            delay=0, session=session, respect_robots=False, deduplicate=True
+        )
+        pages = crawler.crawl(f"{HOME}/")
+        urls = [p.url for p in pages]
+        assert sum("tag/love" in u for u in urls) == 1
+
+    def test_dedup_disabled_keeps_aliases(self) -> None:
+        session = FakeSession(
+            {
+                f"{HOME}/": _page("Home", _link("/a") + _link("/b")),
+                f"{HOME}/a": _page("Same", "identical body"),
+                f"{HOME}/b": _page("Same", "identical body"),
+            }
+        )
+        crawler = Crawler(
+            delay=0, session=session, respect_robots=False, deduplicate=False
+        )
+        pages = crawler.crawl(f"{HOME}/")
+        urls = {p.url for p in pages}
+        assert f"{HOME}/a" in urls
+        assert f"{HOME}/b" in urls
+
+    def test_dedup_still_follows_links_on_alias_page(self) -> None:
+        # An alias page may surface new frontier URLs we have not seen.
+        session = FakeSession(
+            {
+                f"{HOME}/": _page("Home", _link("/a") + _link("/alias")),
+                f"{HOME}/a": _page("A", "unique content for A"),
+                f"{HOME}/alias": _page(
+                    "A", "unique content for A" + _link("/c")
+                ),
+                f"{HOME}/c": _page("C", "yet more text"),
+            }
+        )
+        crawler = Crawler(
+            delay=0, session=session, respect_robots=False, deduplicate=True
+        )
+        pages = crawler.crawl(f"{HOME}/")
+        urls = {p.url for p in pages}
+        # /alias was deduped against /a but /c (linked from /alias) was crawled.
+        assert f"{HOME}/c" in urls
+
+
 class TestModuleLevelHelper:
     def test_crawl_function_delegates_to_class(self) -> None:
         session = FakeSession({f"{HOME}/": _page("Home", "")})
