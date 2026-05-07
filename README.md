@@ -1,6 +1,6 @@
 # Search Engine Tool
 
-A Python command-line search engine that crawls [quotes.toscrape.com](https://quotes.toscrape.com), builds a **positional inverted index** of every word it sees, and answers single-, multi-word, **boolean (`AND`/`OR`/`NOT`)**, and **phrase** queries with five interchangeable rankers (frequency, TF-IDF, BM25, BM25F, and an optional dense / hybrid / learning-to-rank pipeline).
+A Python command-line search engine that crawls [quotes.toscrape.com](https://quotes.toscrape.com), builds a **positional inverted index** of every word it sees, and answers single-, multi-word, and **boolean (`AND`/`OR`/`NOT`)** queries through an interactive REPL. Four sparse rankers are wired into the `--ranker` flag (`frequency`, `tfidf`, `bm25`, `bm25f`); three additional rankers (dense, RRF hybrid, LightGBM LambdaRank) ship as library classes used by the offline evaluation harness in `evaluation/`. A library-level phrase mode (`find(..., mode="phrase")`) requires positionally adjacent terms and is exercised by the test suite.
 
 > Coursework 2 for **COMP3011 — Web Services and Web Data**, University of Leeds.
 
@@ -23,14 +23,14 @@ A Python command-line search engine that crawls [quotes.toscrape.com](https://qu
 ## Highlights
 
 - **Polite crawler**: BFS over the seed host with a strict 6-second request gap, robots.txt support, exponential-backoff retries, and content-hash dedup of alias URLs (e.g. `/tag/love/` and `/tag/love/page/1/`).
-- **Inverted index** with term frequency, document frequency, and per-field positions (title vs body) per posting — positions enable phrase queries and BM25F field weighting. Schema is versioned; v1.0, v1.1, and v1.2 indexes all load.
-- **Five rankers** in the same `--ranker` namespace: `frequency`, `tfidf`, `bm25`, `bm25f`, plus an opt-in dense / hybrid / LTR pipeline (numpy + sentence-transformers + lightgbm).
+- **Inverted index** with term frequency, document frequency, and per-field positions (title vs body) per posting — positions enable BM25F field weighting and the library-level phrase mode. Schema is versioned; v1.0, v1.1, and v1.2 indexes all load.
+- **Four CLI rankers** via `--ranker`: `frequency`, `tfidf`, `bm25`, `bm25f`. Three additional **library-level rankers** ship for the evaluation harness only — `Dense` (sentence-transformers `all-MiniLM-L6-v2`), `Hybrid` (sparse + dense via reciprocal-rank fusion), `LTR` (LightGBM LambdaRank). They are not invocable from the REPL.
 - **Boolean query parser** with `AND`/`OR`/`NOT` and parentheses (precedence `NOT > AND > OR`); plain space-separated queries still take the original AND-intersection path.
-- **Phrase mode**: `find` requires terms in adjacent positions when invoked with `mode="phrase"`.
+- **Library-level phrase mode**: `find(index, query, mode="phrase")` requires terms to appear in positionally adjacent slots; surfaced through the API for test/library use, intentionally not exposed as a CLI flag.
 - **Two "did you mean?"** implementations: the original Levenshtein scan and a SymSpell deletion-dictionary that's independent of vocabulary size.
 - **Prefix autocomplete**: `suggest <prefix>` walks a Trie over the vocabulary and returns the most-frequent matches.
 - **Atomic JSON persistence** with schema versioning, plus an optional **VByte binary sidecar** for compressed posting positions.
-- **332+ tests / 95% coverage / mypy --strict clean**, full suite runs offline in under one second via mocked HTTP and patched `time.sleep`.
+- **332 tests / 93% coverage / mypy --strict clean across 17 modules**, full suite runs offline in under 1.5 seconds via mocked HTTP and patched `time.sleep`.
 
 See [`docs/design.md`](docs/design.md) for the architecture, ranking derivations, the v1.2 schema, and the empirical evaluation against the 12-query gold standard.
 
@@ -235,7 +235,7 @@ cw2/
 
 ### v2.0.0 (2026-05-07)
 
-Major release. Headline change: the project now ships **five sparse rankers and an opt-in dense / hybrid / learning-to-rank pipeline**, **boolean queries**, **per-field BM25F scoring**, **VByte posting compression**, and a **prefix-trie autocomplete** — all behind the same `find` and `suggest` commands.
+Major release. Headline change: the project now ships **four CLI sparse rankers (frequency, TF-IDF, BM25, BM25F) plus a library-level dense / hybrid / learning-to-rank pipeline used by the evaluation harness**, **boolean queries** at the REPL, **per-field BM25F scoring**, **VByte posting compression**, and a **prefix-trie autocomplete** — all on top of the same `find` and `suggest` commands.
 
 **Retrieval & ranking**
 
@@ -264,7 +264,7 @@ Major release. Headline change: the project now ships **five sparse rankers and 
 
 - `Dockerfile` + `Makefile` for reproducible builds.
 - `.pre-commit-config.yaml` (ruff, mypy `--strict`, smoke pytest).
-- 332 tests pass, 2 skip (the lightgbm native runtime is missing on bare macOS without `brew install libomp`; one pre-existing ranker-protocol skip). Coverage 95 %; `mypy --strict` clean across 17 source files.
+- 332 tests pass, 2 skip (the lightgbm native runtime is missing on bare macOS without `brew install libomp`; one pre-existing ranker-protocol skip). Coverage 93 %; `mypy --strict` clean across 17 source files.
 
 ### v1.1.0 (2026-04-29)
 
@@ -272,7 +272,7 @@ Major release. Headline change: the project now ships **five sparse rankers and 
 
 ### v1.0.0 (2026-04-22)
 
-- Initial release: BFS crawler, positional inverted index, TF-IDF ranker, phrase mode, "did you mean" Levenshtein suggestions, atomic versioned JSON storage, interactive REPL.
+- Initial release: BFS crawler, positional inverted index, TF-IDF ranker, library-level phrase mode, "did you mean" Levenshtein suggestions, atomic versioned JSON storage, interactive REPL.
 
 ## Licence
 

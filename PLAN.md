@@ -657,7 +657,7 @@ The project is ready to submit when:
 
 **v2.0.0 acceptance extras** (post-v1.1, optional but met):
 
-- [x] Five sparse rankers selectable from the CLI (`frequency`, `tfidf`, `bm25`, `bm25f`, plus opt-in `dense`, `hybrid`, `ltr`).
+- [x] Four sparse rankers selectable from the CLI (`frequency`, `tfidf`, `bm25`, `bm25f`); three additional rankers (`dense`, `hybrid`, `ltr`) ship as library classes used only by the `evaluation/` harness.
 - [x] Boolean queries (`AND`/`OR`/`NOT`, parens) on the same `find` command.
 - [x] Prefix autocomplete via `suggest <prefix>`.
 - [x] Optional VByte binary posting sidecar with a documented format.
@@ -670,7 +670,7 @@ The project is ready to submit when:
 
 1. **GitHub repo name**: default to `comp3011-cw2-search-engine` unless preferred otherwise.
 2. **GenAI use**: confirm tools used (e.g. Claude Code, Copilot, ChatGPT). Affects declaration text.
-3. **Phrase query syntax**: brief shows `find good friends` as space-separated AND. Should `find "good friends"` mean phrase-query? **Recommend yes** — declared as advanced feature.
+3. **Phrase query syntax**: brief shows `find good friends` as space-separated AND. Phrase mode landed at the library level (`find(..., mode="phrase")`) and is exercised by the test suite, but is intentionally not surfaced as a CLI flag in v2.0.0 — boolean queries take that role instead.
 4. **Stretch features (skip if behind)**: BM25 ranking, snippet generation, query autocompletion. None are required.
 
 ---
