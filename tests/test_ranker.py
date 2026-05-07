@@ -35,12 +35,60 @@ _BASE: dict[str, float | int] = {
 
 
 class TestRegistry:
-    def test_registry_has_three_rankers_by_name(self) -> None:
-        assert set(RANKERS) == {"frequency", "tfidf", "bm25"}
+    def test_registry_has_expected_rankers_by_name(self) -> None:
+        assert {"frequency", "tfidf", "bm25", "bm25f"} <= set(RANKERS)
 
     def test_registry_entries_have_matching_names(self) -> None:
         for name, ranker in RANKERS.items():
             assert ranker.name == name
+
+
+class TestBM25F:
+    """Phase E: per-field weighted scoring."""
+
+    def _ranker(self) -> object:
+        from src.ranker import BM25FRanker
+
+        return BM25FRanker(weights={"title": 5.0, "body": 1.0})
+
+    def test_title_hit_outranks_body_hit_for_same_term(self) -> None:
+        ranker = self._ranker()
+        title_hit = ranker.score_fielded(  # type: ignore[attr-defined]
+            tf_title=1, tf_body=0, df=1, num_docs=10,
+            title_length=5, body_length=100,
+            avg_title_length=5.0, avg_body_length=100.0,
+        )
+        body_hit = ranker.score_fielded(  # type: ignore[attr-defined]
+            tf_title=0, tf_body=1, df=1, num_docs=10,
+            title_length=5, body_length=100,
+            avg_title_length=5.0, avg_body_length=100.0,
+        )
+        assert title_hit > body_hit
+
+    def test_zero_tf_yields_zero(self) -> None:
+        ranker = self._ranker()
+        assert (
+            ranker.score_fielded(  # type: ignore[attr-defined]
+                tf_title=0, tf_body=0, df=1, num_docs=10,
+                title_length=5, body_length=100,
+                avg_title_length=5.0, avg_body_length=100.0,
+            )
+            == 0.0
+        )
+
+    def test_falls_back_to_bm25_via_score_protocol(self) -> None:
+        """Plain ``score`` interface still works for v1.0/v1.1 indexes."""
+        ranker = self._ranker()
+        out = ranker.score(  # type: ignore[attr-defined]
+            tf=2, df=3, num_docs=10, doc_length=50, avg_doc_length=80.0
+        )
+        assert out > 0.0
+
+    def test_invalid_b_rejected(self) -> None:
+        from src.ranker import BM25FRanker
+
+        with pytest.raises(ValueError):
+            BM25FRanker(b_field={"body": 1.5})
 
 
 # ------------------------------------------------------------ degenerate

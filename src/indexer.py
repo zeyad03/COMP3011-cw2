@@ -46,23 +46,38 @@ the start avoids a serialisation surprise later.
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Iterable, TypedDict
+from typing import Iterable, NotRequired, TypedDict
 
 from src.crawler import Page
 from src.tokenizer import tokenize
 
-INDEX_VERSION: str = "1.1"
+INDEX_VERSION: str = "1.2"
+
+# Field IDs used in the per-field positional posting (Phase E, BM25F).
+# A token's field is recorded by storing its position offset by
+# ``FIELD_OFFSET[field]``. The body of every page begins at position 0
+# of FIELD_BODY; the title at position 0 of FIELD_TITLE. The two
+# streams never overlap because FIELD_TITLE positions are written into
+# a separate per-posting list.
+FIELD_TITLE = "title"
+FIELD_BODY = "body"
 
 
 class DocMeta(TypedDict):
     url: str
     title: str
-    length: int
+    length: int                         # total token count (title + body)
+    title_length: NotRequired[int]      # v1.2+: title-only token count
+    body_length: NotRequired[int]       # v1.2+: body-only token count
 
 
 class Posting(TypedDict):
     tf: int
     positions: list[int]
+    # v1.2+ per-field positions for BM25F. Older indexes don't carry
+    # them, so rankers that don't need field info simply ignore the keys.
+    title_positions: NotRequired[list[int]]
+    body_positions: NotRequired[list[int]]
 
 
 class TermEntry(TypedDict):
@@ -101,19 +116,30 @@ def build_index(pages: Iterable[Page]) -> Index:
 
     for doc_index, page in enumerate(pages):
         doc_id = str(doc_index)
-        tokens = tokenize(f"{page.title} {page.text}")
+        title_tokens = tokenize(page.title)
+        body_tokens = tokenize(page.text)
+        tokens = title_tokens + body_tokens
         docs[doc_id] = {
             "url": page.url,
             "title": page.title,
             "length": len(tokens),
+            "title_length": len(title_tokens),
+            "body_length": len(body_tokens),
         }
         total_tokens += len(tokens)
 
         # Group token positions per term within this single document, so we
         # can update the global index with one entry per (term, doc) pair.
+        # Title positions are independent of body positions for BM25F.
         local_positions: dict[str, list[int]] = {}
+        title_positions: dict[str, list[int]] = {}
+        body_positions: dict[str, list[int]] = {}
         for position, token in enumerate(tokens):
             local_positions.setdefault(token, []).append(position)
+        for position, token in enumerate(title_tokens):
+            title_positions.setdefault(token, []).append(position)
+        for position, token in enumerate(body_tokens):
+            body_positions.setdefault(token, []).append(position)
 
         for term, positions in local_positions.items():
             entry = terms.get(term)
@@ -125,6 +151,8 @@ def build_index(pages: Iterable[Page]) -> Index:
             entry["postings"][doc_id] = {
                 "tf": len(positions),
                 "positions": positions,
+                "title_positions": title_positions.get(term, []),
+                "body_positions": body_positions.get(term, []),
             }
 
     return {
