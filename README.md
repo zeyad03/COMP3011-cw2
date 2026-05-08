@@ -36,44 +36,39 @@ See [`docs/design.md`](docs/design.md) for the architecture, ranking derivations
 
 ## Installation
 
-1. Clone the repository:
+The fastest path on macOS / Linux is the Makefile. Every target routes through a project-local `./venv`, so no manual activation is needed:
 
-   ```bash
-   git clone git@github.com:zeyad03/COMP3011-cw2.git
-   cd cw2
-   ```
+```bash
+git clone git@github.com:zeyad03/COMP3011-cw2.git
+cd cw2
+make install-dev   # creates ./venv and installs runtime + dev deps
+make test          # full pytest with coverage
+make run           # launch the interactive REPL
+```
 
-2. Create and activate a virtual environment:
+Other Makefile targets:
 
-   ```bash
-   python3 -m venv venv
-   source venv/bin/activate     # macOS/Linux
-   # or: venv\Scripts\activate  # Windows
-   ```
+```bash
+make venv          # create ./venv (idempotent; auto-called by other targets)
+make shell         # drop into a subshell with the venv activated (replaces `source venv/bin/activate`)
+make typecheck     # mypy --strict on src/
+make eval          # 12-query gold-standard IR evaluation
+make bench         # micro-benchmark (build_index + find vs. corpus size)
+make docker        # build the runtime container (python:3.13-slim)
+make clean         # remove .pytest_cache / .mypy_cache / .hypothesis / __pycache__
+make help          # list all targets
+```
 
-3. Install runtime dependencies:
+If you'd rather manage the venv by hand (e.g. on Windows where the Makefile may not work):
 
-   ```bash
-   pip install -r requirements.txt
-   ```
+```bash
+python3 -m venv venv
+source venv/bin/activate     # macOS/Linux
+# or: venv\Scripts\activate  # Windows
+pip install -r requirements-dev.txt
+```
 
-   To run the test suite, additionally install the dev dependencies:
-
-   ```bash
-   pip install -r requirements-dev.txt
-   ```
-
-   The dense ranker (Phase A) needs `sentence-transformers` (~80 MB model download); the LTR ranker (Phase B) needs `lightgbm` and, on macOS, `brew install libomp`. Both are intentionally opt-in; the core search engine and the four sparse rankers run with only the base requirements.
-
-   A `Makefile` is provided for the common loops:
-
-   ```bash
-   make install-dev   # install + dev deps
-   make test          # full pytest with coverage
-   make typecheck     # mypy --strict on src/
-   make eval          # IR evaluation harness
-   make docker        # build the runtime container
-   ```
+The dense ranker (Phase A) needs `sentence-transformers` (~80 MB model download); the LTR ranker (Phase B) needs `lightgbm` and, on macOS, `brew install libomp`. Both are intentionally opt-in; the core search engine and the four sparse rankers run with only the base `requirements.txt`.
 
 ## Usage
 
