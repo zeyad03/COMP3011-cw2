@@ -6,7 +6,6 @@ from io import StringIO
 from pathlib import Path
 from typing import Any
 
-import pytest
 
 from src.crawler import Page
 from src.indexer import build_index
@@ -71,6 +70,27 @@ class TestREPL:
         cli = CLI(stdin=stdin, stdout=stdout)
         assert cli.run() == 0
 
+    def test_keyboard_interrupt_during_command_returns_to_prompt(self) -> None:
+        """Ctrl-C during a long-running command (e.g. `build`) must not crash
+        the REPL — it should print 'interrupted.' and re-prompt. Regression
+        test for the bug where KeyboardInterrupt propagated out of run()."""
+
+        class _RaisingCrawler:
+            def crawl(self, _start_url: str) -> list[Page]:
+                raise KeyboardInterrupt
+
+        stdin = StringIO("build\nexit\n")
+        stdout = StringIO()
+        cli = CLI(
+            stdin=stdin,
+            stdout=stdout,
+            crawler_factory=lambda: _RaisingCrawler(),
+        )
+        # Must not raise.
+        assert cli.run() == 0
+        out = stdout.getvalue()
+        assert "interrupted." in out
+
 
 class TestNoIndexState:
     def test_print_before_build_or_load(self) -> None:
@@ -126,9 +146,7 @@ class TestFindCommand:
         assert "score=" in out
 
     def test_find_multi_term_and(self, tmp_path: Path) -> None:
-        out = _run(
-            ["load", "find hello friends"], index_path=_saved_index(tmp_path)
-        )
+        out = _run(["load", "find hello friends"], index_path=_saved_index(tmp_path))
         # Only p1 has both 'hello' and 'friends'.
         assert "https://x.com/p1" in out
         assert "https://x.com/p0" not in out
@@ -169,9 +187,7 @@ class TestFindCommand:
         )
         assert "usage: find" in out
 
-    def test_find_explain_prints_per_term_breakdown(
-        self, tmp_path: Path
-    ) -> None:
+    def test_find_explain_prints_per_term_breakdown(self, tmp_path: Path) -> None:
         out = _run(
             ["load", "find --explain hello"],
             index_path=_saved_index(tmp_path),
@@ -182,9 +198,7 @@ class TestFindCommand:
         assert "df=" in out
         assert "contribution=" in out
 
-    def test_find_without_explain_omits_breakdown(
-        self, tmp_path: Path
-    ) -> None:
+    def test_find_without_explain_omits_breakdown(self, tmp_path: Path) -> None:
         out = _run(
             ["load", "find hello"],
             index_path=_saved_index(tmp_path),
@@ -199,9 +213,7 @@ class TestFindCommand:
         # Query terms should be wrapped in ** markers in the snippet.
         assert "**hello**" in out
 
-    def test_find_without_snippet_omits_excerpt_markers(
-        self, tmp_path: Path
-    ) -> None:
+    def test_find_without_snippet_omits_excerpt_markers(self, tmp_path: Path) -> None:
         out = _run(
             ["load", "find hello"],
             index_path=_saved_index(tmp_path),
@@ -235,9 +247,7 @@ class TestBuildCommand:
         assert index_path.exists()
         fake_crawler.crawl.assert_called_once()
 
-    def test_build_handles_crawl_error(
-        self, tmp_path: Path, mocker: Any
-    ) -> None:
+    def test_build_handles_crawl_error(self, tmp_path: Path, mocker: Any) -> None:
         fake_crawler = mocker.MagicMock()
         fake_crawler.crawl.side_effect = RuntimeError("network down")
 
@@ -257,9 +267,7 @@ class TestBuildCommand:
         out = _run(["load foo"], index_path=tmp_path / "out.json")
         assert "usage: load" in out
 
-    def test_build_handles_save_error(
-        self, tmp_path: Path, mocker: Any
-    ) -> None:
+    def test_build_handles_save_error(self, tmp_path: Path, mocker: Any) -> None:
         from src.storage import StorageError
 
         fake_pages = [Page(url="https://x.com/a", title="", text="hello")]

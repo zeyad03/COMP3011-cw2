@@ -24,20 +24,23 @@ repos:
         args: ["--fix"]
       - id: ruff-format
 
-  - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.13.0
-    hooks:
-      - id: mypy
-        args: ["--strict"]
-        files: ^src/
-        additional_dependencies:
-          - types-requests>=2.32
-
+  # mypy and pytest are run via the project venv at ./venv. This avoids
+  # the pre-commit isolated-env problem of having to re-list every
+  # transitive dependency (bs4, sentence-transformers, lightgbm, etc.)
+  # in additional_dependencies. `make venv` / `make install-dev` keeps
+  # the venv up to date.
   - repo: local
     hooks:
+      - id: mypy
+        name: mypy --strict (via venv)
+        entry: venv/bin/mypy --strict src/
+        language: system
+        files: ^src/
+        pass_filenames: false
+
       - id: pytest-smoke
-        name: pytest smoke
-        entry: pytest -q tests/test_smoke.py
+        name: pytest smoke (via venv)
+        entry: venv/bin/pytest -q tests/test_smoke.py
         language: system
         types: [python]
         pass_filenames: false

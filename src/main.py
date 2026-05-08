@@ -97,8 +97,13 @@ class CLI:
             if not line:
                 self._print()
                 return 0
-            if not self.dispatch(line):
-                return 0
+            try:
+                if not self.dispatch(line):
+                    return 0
+            except KeyboardInterrupt:
+                self._print()
+                self._print("interrupted.")
+                continue
 
     def dispatch(self, line: str) -> bool:
         """Run a single command line. Returning ``False`` terminates the REPL."""
@@ -115,9 +120,7 @@ class CLI:
         cmd_name, *args = parts
         handler = self._handlers.get(cmd_name.lower())
         if handler is None:
-            self._print(
-                f"unknown command: {cmd_name!r}. Type 'help' for the list."
-            )
+            self._print(f"unknown command: {cmd_name!r}. Type 'help' for the list.")
             return True
         return handler(args)
 
@@ -127,9 +130,7 @@ class CLI:
         if args:
             self._print("usage: build")
             return True
-        self._print(
-            f"crawling {self._start_url} (delay={self._crawler_delay}s)..."
-        )
+        self._print(f"crawling {self._start_url} (delay={self._crawler_delay}s)...")
         crawler = self._crawler_factory()
         try:
             pages = crawler.crawl(self._start_url)
@@ -186,9 +187,7 @@ class CLI:
             return True
         ranker, explain, snippet, remaining = _extract_find_flags(args)
         if ranker is None:
-            self._print(
-                f"unknown ranker. Available: {', '.join(sorted(RANKERS))}"
-            )
+            self._print(f"unknown ranker. Available: {', '.join(sorted(RANKERS))}")
             return True
         if not remaining:
             self._print(
@@ -218,9 +217,7 @@ class CLI:
                     )
             if snippet:
                 doc_id = url_to_doc_id.get(result.url, "")
-                excerpt = generate_snippet(
-                    self._index, doc_id, query_tokens
-                )
+                excerpt = generate_snippet(self._index, doc_id, query_tokens)
                 if excerpt:
                     self._print(f"     {excerpt}")
         return True
@@ -248,16 +245,10 @@ class CLI:
         self._print("  build              crawl the website and build the index")
         self._print("  load               load the saved index from disk")
         self._print("  print <word>       print the inverted index for a word")
-        self._print(
-            "  find [--ranker R] [--explain] [--snippet] <query>"
-        )
+        self._print("  find [--ranker R] [--explain] [--snippet] <query>")
         self._print("                     R in {tfidf,bm25,bm25f,frequency}")
-        self._print(
-            "                     <query> may use AND/OR/NOT and parentheses"
-        )
-        self._print(
-            "  suggest <prefix>   list indexed terms beginning with <prefix>"
-        )
+        self._print("                     <query> may use AND/OR/NOT and parentheses")
+        self._print("  suggest <prefix>   list indexed terms beginning with <prefix>")
         self._print("  help               show this message")
         self._print("  exit | quit        leave the shell")
         return True
@@ -273,13 +264,9 @@ class CLI:
             return
         for token in tokenize(query):
             if token not in self._index["terms"]:
-                suggestions = suggest(
-                    self._index, token, symspell=self._symspell
-                )
+                suggestions = suggest(self._index, token, symspell=self._symspell)
                 if suggestions:
-                    self._print(
-                        f"did you mean: {', '.join(suggestions)}"
-                    )
+                    self._print(f"did you mean: {', '.join(suggestions)}")
                 return  # Suggest for at most one unknown token.
 
     def _print(self, *parts: object) -> None:

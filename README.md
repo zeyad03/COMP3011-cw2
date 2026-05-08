@@ -259,7 +259,9 @@ Major release. Headline change: the project now ships **four CLI sparse rankers 
 
 - `Dockerfile` + `Makefile` for reproducible builds.
 - `.pre-commit-config.yaml` (ruff, mypy `--strict`, smoke pytest).
-- 332 tests pass, 2 skip (the lightgbm native runtime is missing on bare macOS without `brew install libomp`; one pre-existing ranker-protocol skip). Coverage 93 %; `mypy --strict` clean across 17 source files.
+- `make` targets auto-create and use the project-local `./venv`, so `make test` / `make run` / `make typecheck` work directly from a fresh clone without manual `source venv/bin/activate`. `make shell` drops into an activated subshell when wanted.
+- REPL catches `KeyboardInterrupt` around command dispatch — pressing Ctrl-C during a long-running command (e.g. cancelling a `build` mid-crawl) now prints `interrupted.` and re-prompts instead of crashing out with a traceback.
+- 333 tests pass, 2 skip (the lightgbm native runtime is missing on bare macOS without `brew install libomp`; one pre-existing ranker-protocol skip). Coverage 93 %; `mypy --strict` clean across 17 source files.
 
 ### v1.1.0 (2026-04-29)
 
