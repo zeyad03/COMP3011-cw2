@@ -2,42 +2,13 @@
 
 This document records the architectural decisions, data structures, and algorithmic choices behind the search engine. Companion to the public [`README.md`](../README.md), which describes how to install and use the tool.
 
-**Tracks release `v2.0.0`** (index schema `v1.2`). The release-by-release delta lives in the README's [Changelog](../README.md#changelog); this document covers what *currently* exists, not how it got here.
-
-## Table of contents
-
-- [1. Architecture](#1-architecture)
-- [2. Index schema](#2-index-schema)
-- [3. Tokenisation rules](#3-tokenisation-rules)
-- [4. Crawling](#4-crawling)
-- [5. Ranking](#5-ranking)
-  - [5.1 Pluggable rankers](#51-pluggable-rankers)
-  - [5.2 Boolean queries](#52-boolean-queries)
-- [6. Suggestions](#6-suggestions)
-  - [6.1 Prefix autocomplete](#61-prefix-autocomplete)
-- [7. Storage](#7-storage)
-  - [7.1 VByte posting compression](#71-vbyte-posting-compression)
-- [8. Complexity analysis](#8-complexity-analysis)
-  - [8.1 Storage format and posting compression](#81-storage-format-and-posting-compression)
-  - [8.2 Measured numbers](#82-measured-numbers)
-- [9. Empirical evaluation](#9-empirical-evaluation)
-  - [9.1 Methodology](#91-methodology)
-  - [9.2 Results](#92-results)
-  - [9.3 Discussion](#93-discussion)
-  - [9.4 Cross-validation against scikit-learn](#94-cross-validation-against-scikit-learn)
-  - [9.5 BM25F: per-field ranking](#95-bm25f-per-field-ranking)
-  - [9.6 Hybrid sparse+dense retrieval](#96-hybrid-sparsedense-retrieval)
-  - [9.7 Learning-to-rank](#97-learning-to-rank)
-  - [9.8 Boolean queries](#98-boolean-queries)
-- [10. Design trade-offs explicitly considered](#10-design-trade-offs-explicitly-considered)
-
 ## 1. Architecture
 
 ```
         +------------+    Page list     +------------+    Index    +-----------------+
         |  crawler   |  ──────────────> |  indexer   |  ────────>  |  storage        |
-        |  (BFS, 6s, |                  |  (TF/DF +  |             |  (JSON +       |
-        |   dedup)   |                  |   fields)  |             |   VByte side)  |
+        |  (BFS, 6s, |                  |  (TF/DF +  |             |  (JSON +        |
+        |   dedup)   |                  |   fields)  |             |   VByte side)   |
         +------------+                  +------------+             +--------+--------+
                                                                             │
                                                                             │ load
@@ -136,7 +107,6 @@ Postings store **positions**, not just frequencies, because positions enable **p
 - **Politeness gate** is the single source of truth: every fetch — including `robots.txt` — passes through `_wait_for_politeness`, which sleeps until at least the configured delay (6 s by default) has elapsed since the last request.
 - **Retries** with exponential backoff on 5xx and network errors. Failed pages are logged and skipped, never propagated as exceptions to the user.
 - **robots.txt** loaded once at the start of the crawl via `urllib.robotparser`. Disallowed URLs are skipped silently.
-- **Content-hash dedup**. Pages whose extracted plain text matches an earlier page's hash are skipped (see `Crawler(deduplicate=True)`). The site exposes alias URLs such as `/tag/love/` and `/tag/love/page/1/` that serve identical bodies; without dedup they both end up in the index, splitting their term frequencies and polluting search. Frontier expansion still happens on alias pages so any link they expose is followed.
 
 ## 5. Ranking
 
@@ -156,37 +126,15 @@ Document score is the sum over query terms.
 
 **Phrase mode** filters the AND-intersection candidate set by requiring the query terms to appear in adjacent positions in the same document. Implemented via positional set lookup, O(P) per candidate where P is the number of positions for the rarest term.
 
-### 5.1 Pluggable rankers
-
-The default scorer above is `TFIDFRanker`. The `--ranker` CLI flag selects between four sparse rankers in `src/ranker.py`:
-
-| Name        | Class             | Notes |
-| ----------- | ----------------- | ----- |
-| `frequency` | `FrequencyRanker` | Baseline: raw term frequency. Used to *show* why TF-IDF / BM25 are needed. |
-| `tfidf`     | `TFIDFRanker`     | Default. Sub-linear TF, smoothed IDF. |
-| `bm25`     | `BM25Ranker`      | Okapi BM25 (`k1=1.5`, `b=0.75`). |
-| `bm25f`    | `BM25FRanker`     | Per-field weighted BM25. Falls back to plain BM25 if the index has no field positions. |
-
-Two list-level rankers — `DenseRanker` (sentence-transformer embeddings + cosine) and `HybridRanker` (RRF fusion of any two list rankers) — live in `src/dense_ranker.py` and `src/ranker.py`. They are not in the `RANKERS` registry because they require sidecar files or constructor arguments; they are documented in §9.6. A fifth runtime ranker, `LTRRanker`, is provided by `src/ltr_ranker.py` and documented in §9.7.
-
-### 5.2 Boolean queries
-
-Queries containing `AND` / `OR` / `NOT` (case-insensitive) or parentheses route through `src.query_parser.parse` to build a tagged-union AST, evaluated by `src.query_eval.evaluate` against the inverted index as set algebra (`∩`, `∪`, `universe \ S`). The boolean candidate set then feeds the chosen sparse ranker for scoring. Plain space-separated queries continue to take the original AND-intersection path with no parsing overhead.
-
-Operator precedence is `NOT > AND > OR`; left-associative within each precedence level. `(a OR b) AND c` parses as expected; `a AND b OR c` parses as `(a AND b) OR c`. Malformed boolean queries fall back to the plain AND search rather than erroring at the user.
-
 ## 6. Suggestions
 
-For unknown query terms, `suggest` returns known terms within a Levenshtein distance budget (default 2). Two implementations are shipped, both producing identical output:
+For unknown query terms, `suggest` returns known terms within a Levenshtein distance budget (default 2). The implementation:
 
-- **Levenshtein scan** (default). Pre-filters by length-difference (free lower bound on edit distance), then standard two-row dynamic programming with early bail-out. `O(N · L²)` worst case; well under 100 ms over the 4,646-term index.
-- **SymSpell** (`src/symspell.py`). At index-load time, precompute every string formed by deleting up to *d* characters from each term and store a deletion → terms dictionary. At query time, generate the deletions of the misspelled word and look them up. Output is post-verified with the same Levenshtein routine for ranking, so the contract is preserved exactly. Lookup is independent of vocabulary size; the price is a 3–5× memory increase in the deletion dictionary.
+- Pre-filters by length-difference (free lower bound on edit distance).
+- Uses standard two-row dynamic programming.
+- **Bails out early** when the row's minimum exceeds the distance budget — there is no path to recover within the budget once every cell exceeds it.
 
-The CLI builds the SymSpell index on `load`/`build` and uses it for "did you mean" suggestions; the Levenshtein scan remains available for callers without a pre-built SymSpell index.
-
-### 6.1 Prefix autocomplete
-
-`src/autocomplete.py` builds a prefix Trie over the index vocabulary at load time. The CLI exposes it as `suggest <prefix>`, returning up to 10 indexed terms beginning with `<prefix>`, ranked by collection frequency (`cf`) descending then alphabetically for stable tie-breaks. Build is `O(Σ |term|)`, lookup is `O(|prefix| + k)`.
+Lookup over a 70-page index runs in well under 100 ms.
 
 ## 7. Storage
 
@@ -201,27 +149,7 @@ JSON over pickle:
 
 Transparency wins. The `indent=2, sort_keys=True` format makes diffs across builds clean and the file inspectable in any text editor.
 
-Saves are **atomic**: the JSON is written to a sibling temp file, then `os.replace`d into place. A reader can never observe a half-written file; a crash mid-write cannot corrupt an existing index. When the optional VByte sidecar is enabled (see below), both the JSON and the binary are written to temp files first and `os.replace`d together.
-
-### 7.1 VByte posting compression
-
-The cheap delta-encoding step (v1.1) reduces the *integer values* but JSON still encodes each integer as a decimal-text string with a comma separator. For real compression, `save(..., compress_postings=True)` moves all delta-encoded position lists into a binary sidecar at `<index>.postings.bin` using **variable-byte (VByte)** encoding (see `src/vbyte.py`).
-
-Format (versioned via a 4-byte magic header `VBP\x01`):
-
-```
-file := MAGIC count_uvarint  ( key block )*
-key  := length_uvarint utf8_bytes
-block := length_uvarint  uvarint*
-uvarint  := single non-negative integer with continuation-bit framing
-            (high bit = "more bytes follow"; low 7 bits = next chunk LSB-first)
-```
-
-The format is documented in the module docstring so the index can be reconstructed from spec alone — no other code is required.
-
-When VByte compression is on, the JSON payload still carries everything else (term/posting structure, doc metadata, etc.) plus a `meta.has_postings_bin` flag. `load` reads the sidecar transparently and merges absolute positions back into the in-memory `Index`.
-
-Compression varies with the position distribution; on synthetic posting lists with realistic delta values (heavy-tailed, mostly ≤ 100), VByte beats decimal-JSON by a comfortable margin (≥ 30 %). The trade-off is a binary file in addition to the human-readable JSON, which is why compression is off by default.
+Saves are **atomic**: the JSON is written to a sibling temp file, then `os.replace`d into place. A reader can never observe a half-written file; a crash mid-write cannot corrupt an existing index.
 
 ## 8. Complexity analysis
 
